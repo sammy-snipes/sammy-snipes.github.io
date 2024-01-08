@@ -1,6 +1,6 @@
 ---
 layout: page
-title: "Blog"
+title: "About me"
 ---
 
-bsjdkfalsdfbjkalfbsd lskadjbfs lkjsadbfjskdl lkjasbdfasf lkjbasdfa 
+just a guy
