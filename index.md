@@ -3,7 +3,6 @@ layout: page
 title: "About me"
 ---
 
-# Sam Ellis
 just some guy. 
 ## Stuff I like
 - **[Rock climbing](https://www.youtube.com/watch?v=GwxiTX1fTm4)**: I like rocks, and boulders. I train at Vital BK almost everyday. There was a big lull in the amount of outdoor climbing I did when I finished undergrad and left CO, but i've had a couple sessions in The Gunks lately and its pretty dope. Hopefully send v10 soon. 
@@ -41,6 +40,3 @@ just some guy.
 
 
 - **Piano**: Been playing piano since I was 17. Not good at it, but im doing my best. I like Scriabin, Rachmaninoff, and a lot of video game music. 
-
----
-+1(203) 807-3777 ⋄ samuelhynesellis@gmail.com ⋄ [GitHub](github.com/samellis) ⋄ Brooklyn, NY

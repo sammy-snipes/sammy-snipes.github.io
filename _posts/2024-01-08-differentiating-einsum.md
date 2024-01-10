@@ -16,8 +16,6 @@ dx = ???
 ```
 Heres how I ended up doing it
 
-
-
 ## The process 
 
 Its three steps:
@@ -31,10 +29,9 @@ with the crux being step 2.
 ### Step 1
 
 In general, something like
-<div align="center">
-
-`z = einsum('', x, w)`
-</div>
+```python
+z = einsum('', x, w)
+```
 can be viewed as a function 
 
 $$E : \mathbb{R}^{\text{x.shape}}\rightarrow \mathbb{R}^{\text{z.shape}}$$
@@ -42,15 +39,15 @@ $$E : \mathbb{R}^{\text{x.shape}}\rightarrow \mathbb{R}^{\text{z.shape}}$$
 but instead we are going to view the output as being zero-embedded into 
 
 $$E : \mathbb{R}^{\text{x.shape}}\rightarrow \mathbb{R}^{\text{z.shape}} \hookrightarrow \mathbb{R}^{(\text{x.shape})\times(\text{w.shape})} $$
-Thus our jacobian will be of shape $(\text{x.shape})\times(\text{w.shape})\times(\text{x.shape})$ where
+Thus our jacobian will be of shape $$(\text{x.shape} \times \text{w.shape}) \times \text{x.shape}$$ where
 
 $$
 j_{ijklmn} = \frac{\partial z_{ijkl}}{\partial x_{mn}}
 $$
 
-(if $X$ and $W$ are both 2-dimensional matricies. For 3, 4-d you'd need more subscripts). This probably seems goofy, but it has some nice organizational properties 
+(if $$X$$ and $$W$$ are both 2-dimensional matricies. For 3, 4-d you'd need more subscripts). This probably seems goofy, but it has some nice organizational properties 
 ### Step 2
-In this embedding no dimensions are summed. So every element of $Z$ must either be $0$, by embedding, or something from $X$ multiplied by something from $W$. 
+In this embedding no dimensions are summed. So every element of $$Z$$ must either be $$0$$, by embedding, or something from $$X$$ multiplied by something from $$W$$. 
 
 $$
 z_{ijkl} = 
@@ -60,7 +57,7 @@ x_{ij}w_{kl}
 \end{cases}
 $$
 
-Ok, where is $Z$ defined (not embedded to zero)? This is probably easiest to show by example
+Ok, where is $$Z$$ defined (not embedded to zero)? This is probably easiest to show by example
 1. Consider `ij,jk->ik`. In our embedding we get the tensor
 $$
 z_{ijkl} = 
@@ -93,9 +90,9 @@ x_{ijk}w_{lm}  \\
 \end{cases}
 $$
 
-$Z$ is only defined along the axes that get multiplied together. 
+$$Z$$ is only defined along the axes that get multiplied together. 
 
-Looking at these its also clear that $z_{ijkl}$ is independent of $x_{mn}$ for $(ij)\neq(mn)$. i.e.
+Looking at these its also clear that $$z_{ijkl}$$ is independent of $$x_{mn}$$ for $$(ij)\neq(mn)$$. i.e.
 
 $$
 \frac{\partial z_{ijkl}}{\partial x_{mn}}= 
@@ -115,7 +112,7 @@ w_{kl} & \text{if } \ i = m, j = n & \text{and} \ z_{ijkl} \ \text{is defined}\\
 \end{cases}
 $$
 
-The way I select this region of the jacobian and put $W$ in it is by using....einsum. I dont fully understand the rules of it, but you can use einsum to produce a writeable view of the *diagonal* of a tensor.
+The way I select this region of the jacobian and put $$W$$ in it is by using....einsum. I dont fully understand the rules of it, but you can use einsum to produce a writeable view of the *diagonal* of a tensor.
 
 For examples 1-4, we populate the jacobian as follows
 
@@ -137,13 +134,13 @@ def jacobian_diagonal(ptrn):
     end = "".join([c for c in op1 if c not in op2]) + op2
     return f"{start}->{end}"
 ```
-The reason for that ordering in `end` is to make broadcasting possible. We are broadcasting `w` into `jacobian`, the shape of `w` corresponds with `op2`, so `op2` has to be the last dimensions of the diagonal. 
+The reason for that ordering in `end` is to make broadcasting possible. We are broadcasting `w` into `jacobian`, the shape of `w` corresponds with `op2`, so `op2` has to be the last dimensions of the *diagonal*. 
 
 And thats it for step 2. Our jacobian has the correct values in the correct positions. It just needs to be reshaped in accordance with the original einsum.
 
 ### Step 3
 
-Whatever axis summing or swapping happened in the original einsum now needs to happen in our jacobian. Remember our jacobian is $\big(\text{x.shape} \times \text{y.shape} \big) \times \text{x.shape}$. So we need to sum/swap the first  $\big(\text{x.shape} \times \text{y.shape} \big) $ dims the same way as the original while leaving the trailing $\text{x.shape}$ dimensions alone. For examples 1-4 this would be
+Whatever axis summing or swapping happened in the original einsum now needs to happen in our jacobian. Remember our jacobian is $$\big(\text{x.shape} \times \text{w.shape} \big) \times \text{x.shape}$$. So we need to sum/swap the first  $$\big(\text{x.shape} \times \text{w.shape} \big) $$ dims the same way as the original while leaving the trailing $$\text{x.shape}$$ dimensions alone. For examples 1-4 this would be
 
 ```python
 # 1. input pattern 'ij,jk->ik'
