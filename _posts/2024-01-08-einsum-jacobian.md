@@ -1,10 +1,9 @@
 ---
-title:  "Differentiating Einsum"
+title:  "Einsum Jacobian"
 mathjax: true
 layout: post
 categories: media
 ---
-# Differentiating Einsum
 You can write NN's, CNN's, and even transformers in terms of einsum and activation functions. You could build an autograd library around einsum and activations and it could handle modern architectures. That sounds funny, so I want to give it a try. 
 
 When you look at these its not immediately clear how to differentiate them.

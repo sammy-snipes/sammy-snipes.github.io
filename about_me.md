@@ -1,35 +1,27 @@
 ---
 layout: page
-title: "About me"
+title: ""
 ---
-
-just some guy. 
 ## Stuff I like
 - **[Rock climbing](https://www.youtube.com/watch?v=GwxiTX1fTm4)**: I like rocks, and boulders. I train at Vital BK almost everyday. There was a big lull in the amount of outdoor climbing I did when I finished undergrad and left CO, but i've had a couple sessions in The Gunks lately and its pretty dope. Hopefully send v10 soon. 
 - **[Learning japanese](https://bookmeter.com/home)**: Been studying JP everyday since Feb 1, 2023. A few hrs / day. I had way too much free time when I finished grad school so I started studying as a way to burn some of it. Somewhere along the way it got pretty fun. I say *studying* but its more like just reading books I like and looking up words I dont know. 
 - **Woodworking**: Before moving to the city I had a full workshop/garage setup. Every tool you can imagine. My friends and I did a bunch of car upgrades/repairs and woodworking. I made a lot of cutting boards, and a really epic desk with a sliding tray for my piano. I also built three different climbing walls at my house. 
 
-<div style="display: flex; justify-content: space-around;">
-    <div>
-        <details>
-            <summary>boards</summary>
-            <img src="assets/imgs/boards.jpg" alt="Alt text for Image 1" style="width: 150px; height: auto;">
-        </details>
-    </div>
-    <div>
-        <details>
-            <summary>desk</summary>
-            <img src="assets/imgs/desk.jpg" alt="Alt text for Image 2" style="width: 150px; height: auto;">
-        </details>
-    </div>
+<details>
+    <summary>images</summary>
+    <div style="display: flex; justify-content: space-around;">
         <div>
-        <details>
-            <summary>wall</summary>
-            <img src="assets/imgs/wall.jpg" alt="Alt text for Image 2" style="width: 150px; height: auto;">
-        </details>
+            <img src="/assets/imgs/boards.jpg" alt="Alt text for Image 1" style="width: 150px; height: auto;">
+        </div>
+        <div>
+            <img src="/assets/imgs/desk.jpg" alt="Alt text for Image 2" style="width: 200px; height: auto;">
+        </div>
+        <div>
+            <img src="/assets/imgs/wall.jpg" alt="Alt text for Image 3" style="width: 200px; height: auto;">
+        </div>
     </div>
-    <!-- Add more divs for more images -->
-</div>
+</details>
+
 
 ## Misc. Projects
 - **[Autograd Engine](https://github.com/sammy-snipes/slowgrad)**: Einsum is really all you need. I thought it would be funny to build an autograd engine around that idea. Still a work in progress. The actual engine is pretty small, but theres I wrote a bunch of unecessarry goofy code just to make it feel like pytorch.  
