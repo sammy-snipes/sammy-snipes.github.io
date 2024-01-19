@@ -4,7 +4,13 @@ mathjax: true
 layout: post
 categories: media
 ---
-<script>window.MathJax = { tex: { tags: "ams", }, }; </script> 
+
+<script>window.MathJax = { 
+    tex: { 
+        tags: "ams", 
+        scale: 200,
+    }, 
+}; </script> 
  <script async='async' id='MathJax-script' src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js' type='text/javascript'></script>  
 <!-- l. 10 --><p class='noindent'>Last time I talked about how to find the jacobian of einsum. You can
 use that in backpropogation but you’ll run out of RAM very quickly.
