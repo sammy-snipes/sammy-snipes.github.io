@@ -5,12 +5,12 @@ layout: post
 categories: media
 ---
 
-<script>window.MathJax = { 
-    tex: { 
-        tags: "ams", 
-        scale: 200,
-    }, 
-}; </script> 
+<meta charset='utf-8' /> 
+<meta content='TeX4ht (https://tug.org/tex4ht/)' name='generator' /> 
+<meta content='width=device-width,initial-scale=1' name='viewport' /> 
+<!-- <link href='test.css' rel='stylesheet' type='text/css' />  -->
+<!-- <meta content='test.tex' name='src' />  -->
+<script>window.MathJax = { tex: { tags: "ams", }, }; </script> 
  <script async='async' id='MathJax-script' src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js' type='text/javascript'></script>  
 <!-- l. 10 --><p class='noindent'>Last time I talked about how to find the jacobian of einsum. You can
 use that in backpropogation but you’ll run out of RAM very quickly.
