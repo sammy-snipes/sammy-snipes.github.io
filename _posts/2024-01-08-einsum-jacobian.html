@@ -1,0 +1,367 @@
+---
+title: "Einsum Jacobian"
+mathjax: true
+layout: post
+categories: media
+---
+
+<!DOCTYPE html>
+<html lang="en-US" xml:lang="en-US">
+  <head>
+    <title></title>
+    <meta charset="utf-8" />
+    <meta content="TeX4ht (https://tug.org/tex4ht/)" name="generator" />
+    <meta content="width=device-width,initial-scale=1" name="viewport" />
+    <link
+      href="../tex/2024-01-08-einsum-jacobian/2024-01-08-einsum-jacobian.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <meta content="2024-01-08-einsum-jacobian.tex" name="src" />
+    <script>
+      window.MathJax = { tex: { tags: "ams" } };
+    </script>
+    <script
+      async="async"
+      id="MathJax-script"
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
+      type="text/javascript"
+    ></script>
+  </head>
+  <body>
+    <!-- l. 20 -->
+    <p class="noindent">
+      You can write NN’s, CNN’s, and even transformers in terms of einsum and
+      activation functions. You could build an autograd library around einsum
+      and activations and it could handle modern architectures. That sounds
+      funny, so I want to give it a try. When you look at these its not
+      immediately clear how to differentiate them.
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb1"
+      ><a id='x1-6r1'></a><span id='textcolor1'><span class='cmtt-10x-x-109'>z</span></span> <span id='textcolor2'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor3'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor4'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor5'><span class='cmtt-10x-x-109'>'abc,dck-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>adbk'</span></span><span id='textcolor6'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor7'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor8'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor9'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor10'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-8r2'></a><span id='textcolor11'><span class='cmtt-10x-x-109'>...</span></span> 
+<a id='x1-10r3'></a><span id='textcolor12'><span class='cmtt-10x-x-109'>dx</span></span> <span id='textcolor13'><span class='cmtt-10x-x-109'>=</span></span> <span class='colorbox' id='colorbox14'><span id='textcolor15'><span class='cmtt-10x-x-109'>???</span></span></span></pre>
+    </div>
+    <h3 class="likesectionHead" id="the-process">
+      <a id="x1-1000"></a>The process
+    </h3>
+    <!-- l. 31 -->
+    <p class="noindent">Its three steps:</p>
+    <ol class="enumerate1">
+      <li class="enumerate" id="x1-1002x1">
+        initialize
+        <code class="lstinline"
+          ><span style="color: #000000"
+            >jacobian <span id="textcolor16">=</span>torch.</span
+          ><span style="color: #006699">zeros</span
+          ><span style="color: #000000">(<span id="textcolor17">*</span>x.</span
+          ><span style="color: #006699">shape</span
+          ><span style="color: #000000"
+            >, <span id="textcolor18">*</span>w.</span
+          ><span style="color: #006699">shape</span
+          ><span style="color: #000000"
+            >, <span id="textcolor19">*</span>x.</span
+          ><span style="color: #006699">shape</span
+          ><span style="color: #000000">)</span></code
+        >
+      </li>
+      <li class="enumerate" id="x1-1004x2">
+        put values from
+        <code class="lstinline"><span style="color: #000000">w</span></code> in
+        <code class="lstinline"
+          ><span style="color: #000000">jacobian</span></code
+        >
+      </li>
+      <li class="enumerate" id="x1-1006x3">
+        if necessary, collapse/reshape
+        <code class="lstinline"
+          ><span style="color: #000000">jacobian</span></code
+        >
+      </li>
+    </ol>
+    <!-- l. 38 -->
+    <p class="noindent"></p>
+    <h4 class="likesubsectionHead" id="step-"><a id="x1-2000"></a>Step 1</h4>
+    <!-- l. 39 -->
+    <p class="noindent">
+      In general, something like
+      <code class="lstinline"
+        ><span style="color: #000000"
+          >z<span id="textcolor20">=</span>einsum(</span
+        ><span style="color: #990000">''</span
+        ><span style="color: #000000">, x, w)</span></code
+      >
+      can be viewed as a function
+    </p>
+    <!-- l. 41 -->
+    <p class="noindent">
+      \[E : \mathbb {R}^{\text {x.shape}}\rightarrow \mathbb {R}^{\text
+      {z.shape}}\]
+    </p>
+    <!-- l. 43 -->
+    <p class="noindent">
+      but instead we are going to view the output as being zero-embedded into
+    </p>
+    <!-- l. 45 -->
+    <p class="noindent">
+      \[E : \mathbb {R}^{\text {x.shape}}\rightarrow \mathbb {R}^{\text
+      {z.shape}} \hookrightarrow \mathbb {R}^{(\text {x.shape})\times (\text
+      {w.shape})}\] Thus our jacobian will be of shape \((\text {x.shape} \times
+      \text {w.shape}) \times \text {x.shape}\) where
+    </p>
+    <!-- l. 50 -->
+    <p class="noindent">
+      \[ j_{ijklmn} = \frac {\partial z_{ijkl}}{\partial x_{mn}} \] (if \(X\)
+      and \(W\) are both 2-dimensional matricies. For 3, 4-d you’d need more
+      subscripts). This probably seems goofy, but it has some nice
+      organizational properties
+    </p>
+    <h4 class="likesubsectionHead" id="step-1"><a id="x1-3000"></a>Step 2</h4>
+    <!-- l. 54 -->
+    <p class="noindent">
+      In this embedding no dimensions are summed. So every element of \(Z\) must
+      either be \(0\), by embedding, or something from \(X\) multiplied by
+      something from \(W\).
+    </p>
+    <!-- l. 64 -->
+    <p class="noindent">
+      \[ z_{ijkl} = \begin {cases} 0 \\ x_{ij}w_{kl} \end {cases} \]
+    </p>
+    <!-- l. 66 -->
+    <p class="noindent">
+      Ok, where is \(Z\) defined (not embedded to zero)? This is probably
+      easiest to show by example
+    </p>
+    <ol class="enumerate1">
+      <li class="enumerate" id="x1-3002x1">
+        Consider
+        <code class="lstinline"
+          ><span style="color: #000000"
+            >ij,jk<span id="textcolor21">-</span
+            ><span id="textcolor22">&gt;</span>ik</span
+          ></code
+        >, in our embedding we get the tensor \[ z_{ijkl} = \begin {cases}
+        x_{ij}w_{kl} &amp; \text {if } \ j = k \\ 0 &amp; \text {else } \\ \end
+        {cases} \]
+      </li>
+      <li class="enumerate" id="x1-3004x2">
+        Consider
+        <code class="lstinline"
+          ><span style="color: #000000"
+            >ij,ij<span id="textcolor23">-</span
+            ><span id="textcolor24">&gt;</span>ij</span
+          ></code
+        >, in our embedding we get the tensor \[ z_{ijkl} = \begin {cases}
+        x_{ij}w_{kl} &amp; \text {if }\ i = k, j = l \\ 0 &amp; \text {else} \\
+        \end {cases} \]
+      </li>
+      <li class="enumerate" id="x1-3006x3">
+        Consider
+        <code class="lstinline"
+          ><span style="color: #000000"
+            >bij,bk<span id="textcolor25">-</span
+            ><span id="textcolor26">&gt;</span>bij</span
+          ></code
+        >, in our embedding we get the tensor \[ z_{ijklm} = \begin {cases}
+        x_{ijk}w_{lm} &amp; \text {if } \ i = l \\ 0 &amp; \text {else} \\ \end
+        {cases} \]
+      </li>
+      <li class="enumerate" id="x1-3008x4">
+        Consider
+        <code class="lstinline"
+          ><span style="color: #000000"
+            >bij,kl<span id="textcolor27">-</span
+            ><span id="textcolor28">&gt;</span>bijkl</span
+          ></code
+        >, in our embedding we get the tensor \[ z_{ijklm} = \begin {cases}
+        x_{ijk}w_{lm} \\ \end {cases} \]
+      </li>
+    </ol>
+    <!-- l. 102 -->
+    <p class="noindent">
+      \(Z\) is only defined along the axes that get multiplied together.
+    </p>
+    <!-- l. 104 -->
+    <p class="noindent">
+      Looking at these its also clear that \(z_{ijkl}\) is independent of
+      \(x_{mn}\) for \((ij)\neq (mn)\). i.e. \[\frac {\partial
+      z_{ijkl}}{\partial x_{mn}} = \begin {cases} w_{kl} &amp; \text {if } \ i =
+      m, j = n \\ 0 &amp; \text {else} \end {cases}\]
+    </p>
+    <!-- l. 111 -->
+    <p class="noindent">
+      So in general our jacobian should be organized like this \[j_{ijklmn} =
+      \begin {cases} w_{kl} &amp; \text {if } \ i=m,j=n, \ z_{ijkl} \text { is
+      defined}\\ 0 &amp; \text {else} \end {cases}\]
+    </p>
+    <!-- l. 118 -->
+    <p class="noindent">
+      For examples 1-4, we populate the jacobian as follows
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb2"
+      ><a id='x1-3017r1'></a><span id='textcolor29'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor30'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor31'><span class='cmtt-10x-x-109'>'ijjkij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ijk'</span></span><span id='textcolor32'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor33'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor34'><span class='cmtt-10x-x-109'>)[:]</span></span> <span id='textcolor35'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor36'><span class='cmtt-10x-x-109'>w</span></span> 
+<a id='x1-3019r2'></a><span id='textcolor37'><span class='cmtt-10x-x-109'># 2. input pattern 'ij,ij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ij'</span></span> 
+<a id='x1-3021r3'></a><span id='textcolor38'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor39'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor40'><span class='cmtt-10x-x-109'>'ijijij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ij'</span></span><span id='textcolor41'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor42'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor43'><span class='cmtt-10x-x-109'>)[:]</span></span> <span id='textcolor44'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor45'><span class='cmtt-10x-x-109'>w</span></span> 
+<a id='x1-3023r4'></a><span id='textcolor46'><span class='cmtt-10x-x-109'># 3. input pattern 'bij,bk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bij'</span></span> 
+<a id='x1-3025r5'></a><span id='textcolor47'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor48'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor49'><span class='cmtt-10x-x-109'>'bijbkbij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ijbk'</span></span><span id='textcolor50'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor51'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor52'><span class='cmtt-10x-x-109'>)[:]</span></span> <span id='textcolor53'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor54'><span class='cmtt-10x-x-109'>w</span></span> 
+<a id='x1-3027r6'></a><span id='textcolor55'><span class='cmtt-10x-x-109'># 4. input pattern 'bij,kl-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bijkl'</span></span> 
+<a id='x1-3029r7'></a><span id='textcolor56'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor57'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor58'><span class='cmtt-10x-x-109'>'bijklbij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bijkl'</span></span><span id='textcolor59'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor60'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor61'><span class='cmtt-10x-x-109'>)[:]</span></span> <span id='textcolor62'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor63'><span class='cmtt-10x-x-109'>w</span></span></pre>
+    </div>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb3"
+      ><a id='x1-3036r1'></a><span id='textcolor64'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor65'><span class='cmtt-10x-x-109'>jacobian_diagonal</span></span><span id='textcolor66'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor67'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor68'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-3038r2'></a>    <span id='textcolor69'><span class='cmtt-10x-x-109'>op1</span></span><span id='textcolor70'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor71'><span class='cmtt-10x-x-109'>op2</span></span> <span id='textcolor72'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor73'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor74'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor75'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor76'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor77'><span class='cmtt-10x-x-109'>'-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor78'><span class='cmtt-10x-x-109'>)[</span></span><span id='textcolor79'><span class='cmtt-10x-x-109'>0</span></span><span id='textcolor80'><span class='cmtt-10x-x-109'>]</span></span><span id='textcolor81'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor82'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor83'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor84'><span class='cmtt-10x-x-109'>','</span></span><span id='textcolor85'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-3040r3'></a>    <span id='textcolor86'><span class='cmtt-10x-x-109'>start</span></span> <span id='textcolor87'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor88'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor89'><span class='cmtt-10x-x-109'>op1</span></span> <span id='textcolor90'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor91'><span class='cmtt-10x-x-109'>op2</span></span><span id='textcolor92'><span class='cmtt-10x-x-109'>)</span></span> <span id='textcolor93'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor94'><span class='cmtt-10x-x-109'>op1</span></span> 
+<a id='x1-3042r4'></a>    <span id='textcolor95'><span class='cmtt-10x-x-109'>end</span></span> <span id='textcolor96'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor97'><span class='cmtt-10x-x-109'>""</span></span><span id='textcolor98'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor99'><span class='cmtt-10x-x-109'>join</span></span><span id='textcolor100'><span class='cmtt-10x-x-109'>([</span></span><span id='textcolor101'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor102'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor103'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor104'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor105'><span class='cmtt-10x-x-109'>op1</span></span> <span id='textcolor106'><span class='cmtt-10x-x-109'>if</span></span> <span id='textcolor107'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor108'><span class='cmtt-10x-x-109'>not</span></span> <span id='textcolor109'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor110'><span class='cmtt-10x-x-109'>op2</span></span><span id='textcolor111'><span class='cmtt-10x-x-109'>])</span></span> <span id='textcolor112'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor113'><span class='cmtt-10x-x-109'>op2</span></span> 
+<a id='x1-3044r5'></a><span id='textcolor114'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor115'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor116'><span class='cmtt-10x-x-109'>"{start}-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>{end}"</span></span></pre>
+    </div>
+    <!-- l. 138 -->
+    <p class="noindent">
+      We are broadcasting
+      <code class="lstinline"><span style="color: #000000">w</span></code> into
+      <code class="lstinline"
+        ><span style="color: #000000">jacobian</span></code
+      >
+      , the shape of
+      <code class="lstinline"><span style="color: #000000">w</span></code>
+      corresponds with
+      <code class="lstinline"><span style="color: #000000">op2</span></code
+      >, so
+      <code class="lstinline"><span style="color: #000000">op2</span></code> has
+      to be the last dimensions of the
+      <span class="cmti-10x-x-109">diagonal </span>in order for the broadcasting
+      to work. <br class="newline" /><br class="newline" />And thats it for step
+      2. Our jacobian has the correct values in the correct positions. It just
+      needs to be reshaped in accordance with the original einsum.
+    </p>
+    <!-- l. 146 -->
+    <p class="noindent"></p>
+    <h5 class="likesubsubsectionHead" id="step-2">
+      <a id="x1-4000"></a>Step 3
+    </h5>
+    <!-- l. 148 -->
+    <p class="noindent">
+      Whatever axis summing or swapping happened in the original einsum now
+      needs to happen in our jacobian. Remember our jacobian is \(\big (\text
+      {x.shape} \times \text {w.shape} \big ) \times \text {x.shape}\). So we
+      need to sum/swap the first \(\big (\text {x.shape} \times \text {w.shape}
+      \big ) \) dims the same way as the original while leaving the trailing
+      \(\text {x.shape}\) dimensions alone. For examples 1-4 this would be
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb4"
+      ><a id='x1-4009r1'></a><span id='textcolor117'><span class='cmtt-10x-x-109'>jacobian</span></span> <span id='textcolor118'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor119'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor120'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor121'><span class='cmtt-10x-x-109'>'ijjkab-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ikab'</span></span><span id='textcolor122'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor123'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor124'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4011r2'></a><span id='textcolor125'><span class='cmtt-10x-x-109'># 2. input pattern 'ij,ij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ij'</span></span> 
+<a id='x1-4013r3'></a><span id='textcolor126'><span class='cmtt-10x-x-109'>jacobian</span></span> <span id='textcolor127'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor128'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor129'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor130'><span class='cmtt-10x-x-109'>'ijijab-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ijab'</span></span><span id='textcolor131'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor132'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor133'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4015r4'></a><span id='textcolor134'><span class='cmtt-10x-x-109'># 3. input pattern 'bij,bk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bij'</span></span> 
+<a id='x1-4017r5'></a><span id='textcolor135'><span class='cmtt-10x-x-109'>jacobian</span></span> <span id='textcolor136'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor137'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor138'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor139'><span class='cmtt-10x-x-109'>'bijbkbab-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ijab'</span></span><span id='textcolor140'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor141'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor142'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4019r6'></a><span id='textcolor143'><span class='cmtt-10x-x-109'># 4. input pattern 'bij,kl-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bijkl'</span></span> 
+<a id='x1-4021r7'></a><span id='textcolor144'><span class='cmtt-10x-x-109'>jacobian</span></span> <span id='textcolor145'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor146'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor147'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor148'><span class='cmtt-10x-x-109'>'bijklabc-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bijklabc'</span></span><span id='textcolor149'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor150'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor151'><span class='cmtt-10x-x-109'>)</span></span></pre>
+    </div>
+    <!-- l. 164 -->
+    <p class="noindent">
+      The subscript names dont matter as long as you sum the right stuff. For 1
+      we could do
+      <code class="lstinline"
+        ><span style="color: #000000"
+          >fucker<span id="textcolor152">-</span
+          ><span id="textcolor153">&gt;</span>fker</span
+        ></code
+      >. We can write a simple function that generates this einsum pattern by
+      using elipses.
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb5"
+      ><a id='x1-4031r1'></a><span id='textcolor154'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor155'><span class='cmtt-10x-x-109'>organize_jacobian</span></span><span id='textcolor156'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor157'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor158'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-4033r2'></a>    <span id='textcolor159'><span class='cmtt-10x-x-109'>start</span></span><span id='textcolor160'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor161'><span class='cmtt-10x-x-109'>end</span></span> <span id='textcolor162'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor163'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor164'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor165'><span class='cmtt-10x-x-109'>replace</span></span><span id='textcolor166'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor167'><span class='cmtt-10x-x-109'>','</span></span><span id='textcolor168'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor169'><span class='cmtt-10x-x-109'>''</span></span><span id='textcolor170'><span class='cmtt-10x-x-109'>)</span></span><span id='textcolor171'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor172'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor173'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor174'><span class='cmtt-10x-x-109'>'-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor175'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4035r3'></a>    <span id='textcolor176'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor177'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor178'><span class='cmtt-10x-x-109'>"{start}...-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>{end}..."</span></span> 
+<a id='x1-4037r4'></a> 
+<a id='x1-4039r5'></a><span id='textcolor179'><span class='cmtt-10x-x-109'>organize_jacobian</span></span><span id='textcolor180'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor181'><span class='cmtt-10x-x-109'>'ij,jk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ik'</span></span><span id='textcolor182'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4041r6'></a><span id='textcolor183'><span class='cmtt-10x-x-109'># returns ijjk...-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ik...</span></span> 
+<a id='x1-4043r7'></a><span id='textcolor184'><span class='cmtt-10x-x-109'>organize_jacobian</span></span><span id='textcolor185'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor186'><span class='cmtt-10x-x-109'>'ij,ij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor187'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4045r8'></a><span id='textcolor188'><span class='cmtt-10x-x-109'># returns bijbik...-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bij...</span></span></pre>
+    </div>
+    <!-- l. 178 -->
+    <p class="noindent"></p>
+    <h3 class="likesectionHead" id="final-product">
+      <a id="x1-5000"></a>Final Product
+    </h3>
+    <!-- l. 180 -->
+    <p class="noindent">
+      lets write a little function that does the whole thing.
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb6"
+      ><a id='x1-5023r1'></a><span id='textcolor189'><span class='cmtt-10x-x-109'>from</span></span> <span id='textcolor190'><span class='cmtt-10x-x-109'>torch</span></span> <span id='textcolor191'><span class='cmtt-10x-x-109'>import</span></span> <span id='textcolor192'><span class='cmtt-10x-x-109'>einsum</span></span> 
+<a id='x1-5025r2'></a><span id='textcolor193'><span class='cmtt-10x-x-109'>from</span></span> <span id='textcolor194'><span class='cmtt-10x-x-109'>torch.autograd.functional</span></span> <span id='textcolor195'><span class='cmtt-10x-x-109'>import</span></span> <span id='textcolor196'><span class='cmtt-10x-x-109'>jacobian</span></span> 
+<a id='x1-5027r3'></a> 
+<a id='x1-5029r4'></a><span id='textcolor197'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor198'><span class='cmtt-10x-x-109'>jacobian_diag_ptrn</span></span><span id='textcolor199'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor200'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor201'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-5031r5'></a>    <span id='textcolor202'><span class='cmtt-10x-x-109'>op1</span></span><span id='textcolor203'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor204'><span class='cmtt-10x-x-109'>op2</span></span> <span id='textcolor205'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor206'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor207'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor208'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor209'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor210'><span class='cmtt-10x-x-109'>'-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor211'><span class='cmtt-10x-x-109'>)[</span></span><span id='textcolor212'><span class='cmtt-10x-x-109'>0</span></span><span id='textcolor213'><span class='cmtt-10x-x-109'>]</span></span><span id='textcolor214'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor215'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor216'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor217'><span class='cmtt-10x-x-109'>','</span></span><span id='textcolor218'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5033r6'></a>    <span id='textcolor219'><span class='cmtt-10x-x-109'>start</span></span> <span id='textcolor220'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor221'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor222'><span class='cmtt-10x-x-109'>op1</span></span> <span id='textcolor223'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor224'><span class='cmtt-10x-x-109'>op2</span></span><span id='textcolor225'><span class='cmtt-10x-x-109'>)</span></span> <span id='textcolor226'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor227'><span class='cmtt-10x-x-109'>op1</span></span> 
+<a id='x1-5035r7'></a>    <span id='textcolor228'><span class='cmtt-10x-x-109'>end</span></span> <span id='textcolor229'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor230'><span class='cmtt-10x-x-109'>""</span></span><span id='textcolor231'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor232'><span class='cmtt-10x-x-109'>join</span></span><span id='textcolor233'><span class='cmtt-10x-x-109'>([</span></span><span id='textcolor234'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor235'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor236'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor237'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor238'><span class='cmtt-10x-x-109'>op1</span></span> <span id='textcolor239'><span class='cmtt-10x-x-109'>if</span></span> <span id='textcolor240'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor241'><span class='cmtt-10x-x-109'>not</span></span> <span id='textcolor242'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor243'><span class='cmtt-10x-x-109'>op2</span></span><span id='textcolor244'><span class='cmtt-10x-x-109'>])</span></span> <span id='textcolor245'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor246'><span class='cmtt-10x-x-109'>op2</span></span> 
+<a id='x1-5037r8'></a>    <span id='textcolor247'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor248'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor249'><span class='cmtt-10x-x-109'>"{start}-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>{end}"</span></span> 
+<a id='x1-5039r9'></a> 
+<a id='x1-5041r10'></a><span id='textcolor250'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor251'><span class='cmtt-10x-x-109'>organize_jacobian_ptrn</span></span><span id='textcolor252'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor253'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor254'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-5043r11'></a>    <span id='textcolor255'><span class='cmtt-10x-x-109'>start</span></span><span id='textcolor256'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor257'><span class='cmtt-10x-x-109'>end</span></span> <span id='textcolor258'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor259'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor260'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor261'><span class='cmtt-10x-x-109'>replace</span></span><span id='textcolor262'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor263'><span class='cmtt-10x-x-109'>','</span></span><span id='textcolor264'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor265'><span class='cmtt-10x-x-109'>''</span></span><span id='textcolor266'><span class='cmtt-10x-x-109'>)</span></span><span id='textcolor267'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor268'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor269'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor270'><span class='cmtt-10x-x-109'>'-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor271'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5045r12'></a>    <span id='textcolor272'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor273'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor274'><span class='cmtt-10x-x-109'>"{start}...-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>{end}..."</span></span> 
+<a id='x1-5047r13'></a> 
+<a id='x1-5049r14'></a><span id='textcolor275'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor276'><span class='cmtt-10x-x-109'>get_ptrns</span></span><span id='textcolor277'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor278'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor279'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-5051r15'></a>    <span id='textcolor280'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor281'><span class='cmtt-10x-x-109'>jacobian_diag_ptrn</span></span><span id='textcolor282'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor283'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor284'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor285'><span class='cmtt-10x-x-109'>organize_jacobian_ptrn</span></span><span id='textcolor286'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor287'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor288'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5053r16'></a> 
+<a id='x1-5055r17'></a><span id='textcolor289'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor290'><span class='cmtt-10x-x-109'>einsum_jacobian</span></span><span id='textcolor291'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor292'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor293'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor294'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor295'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor296'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor297'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-5057r18'></a>    <span id='textcolor298'><span class='cmtt-10x-x-109'>j</span></span> <span id='textcolor299'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor300'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor301'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor302'><span class='cmtt-10x-x-109'>zeros</span></span><span id='textcolor303'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor304'><span class='cmtt-10x-x-109'>*</span></span><span id='textcolor305'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor306'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor307'><span class='cmtt-10x-x-109'>shape</span></span><span id='textcolor308'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor309'><span class='cmtt-10x-x-109'>*</span></span><span id='textcolor310'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor311'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor312'><span class='cmtt-10x-x-109'>shape</span></span><span id='textcolor313'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor314'><span class='cmtt-10x-x-109'>*</span></span><span id='textcolor315'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor316'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor317'><span class='cmtt-10x-x-109'>shape</span></span><span id='textcolor318'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5059r19'></a>    <span id='textcolor319'><span class='cmtt-10x-x-109'>diag_ptrn</span></span><span id='textcolor320'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor321'><span class='cmtt-10x-x-109'>org_ptrn</span></span> <span id='textcolor322'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor323'><span class='cmtt-10x-x-109'>get_ptrns</span></span><span id='textcolor324'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor325'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor326'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5061r20'></a>    <span id='textcolor327'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor328'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor329'><span class='cmtt-10x-x-109'>diag_ptrn</span></span><span id='textcolor330'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor331'><span class='cmtt-10x-x-109'>j</span></span><span id='textcolor332'><span class='cmtt-10x-x-109'>)[:]</span></span> <span id='textcolor333'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor334'><span class='cmtt-10x-x-109'>w</span></span> 
+<a id='x1-5063r21'></a>    <span id='textcolor335'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor336'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor337'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor338'><span class='cmtt-10x-x-109'>org_ptrn</span></span><span id='textcolor339'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor340'><span class='cmtt-10x-x-109'>j</span></span><span id='textcolor341'><span class='cmtt-10x-x-109'>)</span></span></pre>
+    </div>
+    <p>now test</p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb7"
+      ><a id='x1-5088r1'></a><span id='textcolor342'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor343'><span class='cmtt-10x-x-109'>sanity</span></span><span id='textcolor344'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor345'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor346'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor347'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor348'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor349'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor350'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-5090r2'></a>    <span id='textcolor351'><span class='cmtt-10x-x-109'>f</span></span> <span id='textcolor352'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor353'><span class='cmtt-10x-x-109'>lambda</span></span> <span id='textcolor354'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor355'><span class='cmtt-10x-x-109'>:</span></span> <span id='textcolor356'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor357'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor358'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor359'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor360'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor361'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor362'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor363'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5092r3'></a>    <span id='textcolor364'><span class='cmtt-10x-x-109'>j</span></span> <span id='textcolor365'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor366'><span class='cmtt-10x-x-109'>jacobian</span></span><span id='textcolor367'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor368'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor369'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor370'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor371'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5094r4'></a>    <span id='textcolor372'><span class='cmtt-10x-x-109'>manual_j</span></span> <span id='textcolor373'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor374'><span class='cmtt-10x-x-109'>einsum_jacobian</span></span><span id='textcolor375'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor376'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor377'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor378'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor379'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor380'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor381'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5096r5'></a>    <span id='textcolor382'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor383'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor384'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor385'><span class='cmtt-10x-x-109'>allclose</span></span><span id='textcolor386'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor387'><span class='cmtt-10x-x-109'>j</span></span><span id='textcolor388'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor389'><span class='cmtt-10x-x-109'>manual_j</span></span><span id='textcolor390'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5098r6'></a> 
+<a id='x1-5100r7'></a><span id='textcolor391'><span class='cmtt-10x-x-109'>ptrn1</span></span> <span id='textcolor392'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor393'><span class='cmtt-10x-x-109'>'ij,jk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ik'</span></span> <span id='textcolor394'><span class='cmtt-10x-x-109'># mm</span></span> 
+<a id='x1-5102r8'></a><span id='textcolor395'><span class='cmtt-10x-x-109'>x1</span></span><span id='textcolor396'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor397'><span class='cmtt-10x-x-109'>w1</span></span> <span id='textcolor398'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor399'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor400'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor401'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor402'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor403'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor404'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor405'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor406'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor407'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor408'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor409'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor410'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor411'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor412'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor413'><span class='cmtt-10x-x-109'>4</span></span><span id='textcolor414'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5104r9'></a> 
+<a id='x1-5106r10'></a><span id='textcolor415'><span class='cmtt-10x-x-109'>ptrn2</span></span> <span id='textcolor416'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor417'><span class='cmtt-10x-x-109'>'bij,bjk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bik'</span></span> <span id='textcolor418'><span class='cmtt-10x-x-109'># bmm</span></span> 
+<a id='x1-5108r11'></a><span id='textcolor419'><span class='cmtt-10x-x-109'>x2</span></span><span id='textcolor420'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor421'><span class='cmtt-10x-x-109'>w2</span></span> <span id='textcolor422'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor423'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor424'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor425'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor426'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor427'><span class='cmtt-10x-x-109'>5</span></span><span id='textcolor428'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor429'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor430'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor431'><span class='cmtt-10x-x-109'>8</span></span><span id='textcolor432'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor433'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor434'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor435'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor436'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor437'><span class='cmtt-10x-x-109'>5</span></span><span id='textcolor438'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor439'><span class='cmtt-10x-x-109'>8</span></span><span id='textcolor440'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor441'><span class='cmtt-10x-x-109'>9</span></span><span id='textcolor442'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5110r12'></a> 
+<a id='x1-5112r13'></a><span id='textcolor443'><span class='cmtt-10x-x-109'>ptrn3</span></span> <span id='textcolor444'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor445'><span class='cmtt-10x-x-109'>'bchwkt,fckt-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bfhw'</span></span> <span id='textcolor446'><span class='cmtt-10x-x-109'># convolution</span></span> 
+<a id='x1-5114r14'></a><span id='textcolor447'><span class='cmtt-10x-x-109'>x3</span></span><span id='textcolor448'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor449'><span class='cmtt-10x-x-109'>w3</span></span> <span id='textcolor450'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor451'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor452'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor453'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor454'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor455'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor456'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor457'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor458'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor459'><span class='cmtt-10x-x-109'>16</span></span><span id='textcolor460'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor461'><span class='cmtt-10x-x-109'>16</span></span><span id='textcolor462'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor463'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor464'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor465'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor466'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor467'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor468'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor469'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor470'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor471'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor472'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor473'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor474'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor475'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor476'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor477'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor478'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5116r15'></a> 
+<a id='x1-5118r16'></a><span id='textcolor479'><span class='cmtt-10x-x-109'>ptrn4</span></span> <span id='textcolor480'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor481'><span class='cmtt-10x-x-109'>'abcd,efd-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span> <span id='textcolor482'><span class='cmtt-10x-x-109'># ???</span></span> 
+<a id='x1-5120r17'></a><span id='textcolor483'><span class='cmtt-10x-x-109'>x4</span></span><span id='textcolor484'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor485'><span class='cmtt-10x-x-109'>w4</span></span> <span id='textcolor486'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor487'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor488'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor489'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor490'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor491'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor492'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor493'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor494'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor495'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor496'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor497'><span class='cmtt-10x-x-109'>4</span></span><span id='textcolor498'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor499'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor500'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor501'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor502'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor503'><span class='cmtt-10x-x-109'>9</span></span><span id='textcolor504'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor505'><span class='cmtt-10x-x-109'>10</span></span><span id='textcolor506'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor507'><span class='cmtt-10x-x-109'>4</span></span><span id='textcolor508'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-5122r18'></a> 
+<a id='x1-5124r19'></a><span id='textcolor509'><span class='cmtt-10x-x-109'>stuff</span></span> <span id='textcolor510'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor511'><span class='cmtt-10x-x-109'>[(</span></span><span id='textcolor512'><span class='cmtt-10x-x-109'>ptrn1</span></span><span id='textcolor513'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor514'><span class='cmtt-10x-x-109'>x1</span></span><span id='textcolor515'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor516'><span class='cmtt-10x-x-109'>w1</span></span><span id='textcolor517'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor518'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor519'><span class='cmtt-10x-x-109'>ptrn2</span></span><span id='textcolor520'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor521'><span class='cmtt-10x-x-109'>x2</span></span><span id='textcolor522'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor523'><span class='cmtt-10x-x-109'>w2</span></span><span id='textcolor524'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor525'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor526'><span class='cmtt-10x-x-109'>ptrn3</span></span><span id='textcolor527'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor528'><span class='cmtt-10x-x-109'>x3</span></span><span id='textcolor529'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor530'><span class='cmtt-10x-x-109'>w3</span></span><span id='textcolor531'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor532'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor533'><span class='cmtt-10x-x-109'>ptrn4</span></span><span id='textcolor534'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor535'><span class='cmtt-10x-x-109'>x4</span></span><span id='textcolor536'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor537'><span class='cmtt-10x-x-109'>w4</span></span><span id='textcolor538'><span class='cmtt-10x-x-109'>)]</span></span> 
+<a id='x1-5126r20'></a><span id='textcolor539'><span class='cmtt-10x-x-109'>results</span></span> <span id='textcolor540'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor541'><span class='cmtt-10x-x-109'>[</span></span><span id='textcolor542'><span class='cmtt-10x-x-109'>sanity</span></span><span id='textcolor543'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor544'><span class='cmtt-10x-x-109'>*</span></span><span id='textcolor545'><span class='cmtt-10x-x-109'>thing</span></span><span id='textcolor546'><span class='cmtt-10x-x-109'>)</span></span> <span id='textcolor547'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor548'><span class='cmtt-10x-x-109'>thing</span></span> <span id='textcolor549'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor550'><span class='cmtt-10x-x-109'>stuff</span></span><span id='textcolor551'><span class='cmtt-10x-x-109'>]</span></span> 
+<a id='x1-5128r21'></a> 
+<a id='x1-5130r22'></a><span id='textcolor552'><span class='cmtt-10x-x-109'>results</span></span> 
+<a id='x1-5132r23'></a><span id='textcolor553'><span class='cmtt-10x-x-109'># [True, True, True, True]</span></span></pre>
+    </div>
+    <!-- l. 231 -->
+    <p class="noindent">
+      And thats how you get the jacobian of einsum. Its not something youd ever
+      use since its so enourmous you run out of RAM with anything more than toy
+      examples, but still kinda neat.
+    </p>
+  </body>
+</html>

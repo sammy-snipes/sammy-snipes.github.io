@@ -1,0 +1,7 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k}{def} \PYG{n+nf}{jacobian\PYGZus{}diagonal}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{):}
+    \PYG{n}{op1}\PYG{p}{,} \PYG{n}{op2} \PYG{o}{=} \PYG{n}{ptrn}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}\PYGZhy{}\PYGZgt{}\PYGZsq{}}\PYG{p}{)[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}
+    \PYG{n}{start} \PYG{o}{=} \PYG{p}{(}\PYG{n}{op1} \PYG{o}{+} \PYG{n}{op2}\PYG{p}{)} \PYG{o}{+} \PYG{n}{op1}
+    \PYG{n}{end} \PYG{o}{=} \PYG{l+s+s2}{\PYGZdq{}\PYGZdq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{([}\PYG{n}{c} \PYG{k}{for} \PYG{n}{c} \PYG{o+ow}{in} \PYG{n}{op1} \PYG{k}{if} \PYG{n}{c} \PYG{o+ow}{not} \PYG{o+ow}{in} \PYG{n}{op2}\PYG{p}{])} \PYG{o}{+} \PYG{n}{op2}
+\PYG{k}{return} \PYG{n}{f}\PYG{l+s+s2}{\PYGZdq{}\PYGZob{}start\PYGZcb{}\PYGZhy{}\PYGZgt{}\PYGZob{}end\PYGZcb{}\PYGZdq{}}
+\end{Verbatim}

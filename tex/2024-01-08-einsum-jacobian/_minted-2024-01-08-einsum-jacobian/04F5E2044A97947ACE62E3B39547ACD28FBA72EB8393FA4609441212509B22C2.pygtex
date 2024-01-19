@@ -1,0 +1,5 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{n}{z} \PYG{o}{=} \PYG{n}{einsum}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}abc,dck\PYGZhy{}\PYGZgt{}adbk\PYGZsq{}}\PYG{p}{,} \PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{)}
+\PYG{o}{...}
+\PYG{n}{dx} \PYG{o}{=} \PYG{err}{???}
+\end{Verbatim}

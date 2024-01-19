@@ -1,0 +1,10 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k}{def} \PYG{n+nf}{organize\PYGZus{}jacobian}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{):}
+    \PYG{n}{start}\PYG{p}{,} \PYG{n}{end} \PYG{o}{=} \PYG{n}{ptrn}\PYG{o}{.}\PYG{n}{replace}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{},\PYGZsq{}}\PYG{p}{,} \PYG{l+s+s1}{\PYGZsq{}\PYGZsq{}}\PYG{p}{)}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}\PYGZhy{}\PYGZgt{}\PYGZsq{}}\PYG{p}{)}
+    \PYG{k}{return} \PYG{n}{f}\PYG{l+s+s2}{\PYGZdq{}\PYGZob{}start\PYGZcb{}...\PYGZhy{}\PYGZgt{}\PYGZob{}end\PYGZcb{}...\PYGZdq{}}
+
+\PYG{n}{organize\PYGZus{}jacobian}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}ij,jk\PYGZhy{}\PYGZgt{}ik\PYGZsq{}}\PYG{p}{)}
+\PYG{c+c1}{\PYGZsh{} returns ijjk...\PYGZhy{}\PYGZgt{}ik...}
+\PYG{n}{organize\PYGZus{}jacobian}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}ij,ij\PYGZhy{}\PYGZgt{}\PYGZsq{}}\PYG{p}{)}
+\PYG{c+c1}{\PYGZsh{} returns bijbik...\PYGZhy{}\PYGZgt{}bij...}
+\end{Verbatim}

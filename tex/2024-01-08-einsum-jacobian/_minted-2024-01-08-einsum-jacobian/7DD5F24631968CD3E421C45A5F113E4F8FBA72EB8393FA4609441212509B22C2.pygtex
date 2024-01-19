@@ -1,0 +1,25 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k}{def} \PYG{n+nf}{sanity}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{):}
+    \PYG{n}{f} \PYG{o}{=} \PYG{k}{lambda} \PYG{n}{x}\PYG{p}{:} \PYG{n}{einsum}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{)}
+    \PYG{n}{j} \PYG{o}{=} \PYG{n}{jacobian}\PYG{p}{(}\PYG{n}{f}\PYG{p}{,} \PYG{n}{x}\PYG{p}{)}
+    \PYG{n}{manual\PYGZus{}j} \PYG{o}{=} \PYG{n}{einsum\PYGZus{}jacobian}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{)}
+    \PYG{k}{return} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{allclose}\PYG{p}{(}\PYG{n}{j}\PYG{p}{,} \PYG{n}{manual\PYGZus{}j}\PYG{p}{)}
+
+\PYG{n}{ptrn1} \PYG{o}{=} \PYG{l+s+s1}{\PYGZsq{}ij,jk\PYGZhy{}\PYGZgt{}ik\PYGZsq{}} \PYG{c+c1}{\PYGZsh{} mm}
+\PYG{n}{x1}\PYG{p}{,} \PYG{n}{w1} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{,} \PYG{l+m+mi}{3}\PYG{p}{),} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{,} \PYG{l+m+mi}{4}\PYG{p}{)}
+
+\PYG{n}{ptrn2} \PYG{o}{=} \PYG{l+s+s1}{\PYGZsq{}bij,bjk\PYGZhy{}\PYGZgt{}bik\PYGZsq{}} \PYG{c+c1}{\PYGZsh{} bmm}
+\PYG{n}{x2}\PYG{p}{,} \PYG{n}{w2} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{5}\PYG{p}{,} \PYG{l+m+mi}{3}\PYG{p}{,} \PYG{l+m+mi}{8}\PYG{p}{),} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{5}\PYG{p}{,} \PYG{l+m+mi}{8}\PYG{p}{,} \PYG{l+m+mi}{9}\PYG{p}{)}
+
+\PYG{n}{ptrn3} \PYG{o}{=} \PYG{l+s+s1}{\PYGZsq{}bchwkt,fckt\PYGZhy{}\PYGZgt{}bfhw\PYGZsq{}} \PYG{c+c1}{\PYGZsh{} convolution}
+\PYG{n}{x3}\PYG{p}{,} \PYG{n}{w3} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,} \PYG{l+m+mi}{3}\PYG{p}{,} \PYG{l+m+mi}{16}\PYG{p}{,} \PYG{l+m+mi}{16}\PYG{p}{,} \PYG{l+m+mi}{2}\PYG{p}{,} \PYG{l+m+mi}{2}\PYG{p}{),} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{,} \PYG{l+m+mi}{3}\PYG{p}{,} \PYG{l+m+mi}{2}\PYG{p}{,} \PYG{l+m+mi}{2}\PYG{p}{)}
+
+\PYG{n}{ptrn4} \PYG{o}{=} \PYG{l+s+s1}{\PYGZsq{}abcd,efd\PYGZhy{}\PYGZgt{}\PYGZsq{}} \PYG{c+c1}{\PYGZsh{} ???}
+\PYG{n}{x4}\PYG{p}{,} \PYG{n}{w4} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,} \PYG{l+m+mi}{2}\PYG{p}{,} \PYG{l+m+mi}{3}\PYG{p}{,} \PYG{l+m+mi}{4}\PYG{p}{),} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{9}\PYG{p}{,} \PYG{l+m+mi}{10}\PYG{p}{,} \PYG{l+m+mi}{4}\PYG{p}{)}
+
+\PYG{n}{stuff} \PYG{o}{=} \PYG{p}{[(}\PYG{n}{ptrn1}\PYG{p}{,} \PYG{n}{x1}\PYG{p}{,} \PYG{n}{w1}\PYG{p}{),} \PYG{p}{(}\PYG{n}{ptrn2}\PYG{p}{,} \PYG{n}{x2}\PYG{p}{,} \PYG{n}{w2}\PYG{p}{),} \PYG{p}{(}\PYG{n}{ptrn3}\PYG{p}{,} \PYG{n}{x3}\PYG{p}{,} \PYG{n}{w3}\PYG{p}{),} \PYG{p}{(}\PYG{n}{ptrn4}\PYG{p}{,} \PYG{n}{x4}\PYG{p}{,} \PYG{n}{w4}\PYG{p}{)]}
+\PYG{n}{results} \PYG{o}{=} \PYG{p}{[}\PYG{n}{sanity}\PYG{p}{(}\PYG{o}{*}\PYG{n}{thing}\PYG{p}{)} \PYG{k}{for} \PYG{n}{thing} \PYG{o+ow}{in} \PYG{n}{stuff}\PYG{p}{]}
+
+\PYG{n}{results}
+\PYG{c+c1}{\PYGZsh{} [True, True, True, True]}
+\end{Verbatim}

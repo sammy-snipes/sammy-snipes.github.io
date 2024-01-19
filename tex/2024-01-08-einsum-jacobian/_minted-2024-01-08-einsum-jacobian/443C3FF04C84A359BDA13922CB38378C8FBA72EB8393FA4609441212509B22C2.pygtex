@@ -1,0 +1,23 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k+kn}{from} \PYG{n+nn}{torch} \PYG{k+kn}{import} \PYG{n}{einsum}
+\PYG{k+kn}{from} \PYG{n+nn}{torch.autograd.functional} \PYG{k+kn}{import} \PYG{n}{jacobian}
+
+\PYG{k}{def} \PYG{n+nf}{jacobian\PYGZus{}diag\PYGZus{}ptrn}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{):}
+    \PYG{n}{op1}\PYG{p}{,} \PYG{n}{op2} \PYG{o}{=} \PYG{n}{ptrn}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}\PYGZhy{}\PYGZgt{}\PYGZsq{}}\PYG{p}{)[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}
+    \PYG{n}{start} \PYG{o}{=} \PYG{p}{(}\PYG{n}{op1} \PYG{o}{+} \PYG{n}{op2}\PYG{p}{)} \PYG{o}{+} \PYG{n}{op1}
+    \PYG{n}{end} \PYG{o}{=} \PYG{l+s+s2}{\PYGZdq{}\PYGZdq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{([}\PYG{n}{c} \PYG{k}{for} \PYG{n}{c} \PYG{o+ow}{in} \PYG{n}{op1} \PYG{k}{if} \PYG{n}{c} \PYG{o+ow}{not} \PYG{o+ow}{in} \PYG{n}{op2}\PYG{p}{])} \PYG{o}{+} \PYG{n}{op2}
+    \PYG{k}{return} \PYG{n}{f}\PYG{l+s+s2}{\PYGZdq{}\PYGZob{}start\PYGZcb{}\PYGZhy{}\PYGZgt{}\PYGZob{}end\PYGZcb{}\PYGZdq{}}
+
+\PYG{k}{def} \PYG{n+nf}{organize\PYGZus{}jacobian\PYGZus{}ptrn}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{):}
+    \PYG{n}{start}\PYG{p}{,} \PYG{n}{end} \PYG{o}{=} \PYG{n}{ptrn}\PYG{o}{.}\PYG{n}{replace}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{},\PYGZsq{}}\PYG{p}{,} \PYG{l+s+s1}{\PYGZsq{}\PYGZsq{}}\PYG{p}{)}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}\PYGZhy{}\PYGZgt{}\PYGZsq{}}\PYG{p}{)}
+    \PYG{k}{return} \PYG{n}{f}\PYG{l+s+s2}{\PYGZdq{}\PYGZob{}start\PYGZcb{}...\PYGZhy{}\PYGZgt{}\PYGZob{}end\PYGZcb{}...\PYGZdq{}}
+
+\PYG{k}{def} \PYG{n+nf}{get\PYGZus{}ptrns}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{):}
+    \PYG{k}{return} \PYG{n}{jacobian\PYGZus{}diag\PYGZus{}ptrn}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{),} \PYG{n}{organize\PYGZus{}jacobian\PYGZus{}ptrn}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{)}
+
+\PYG{k}{def} \PYG{n+nf}{einsum\PYGZus{}jacobian}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{):}
+    \PYG{n}{j} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{zeros}\PYG{p}{(}\PYG{o}{*}\PYG{n}{x}\PYG{o}{.}\PYG{n}{shape}\PYG{p}{,} \PYG{o}{*}\PYG{n}{w}\PYG{o}{.}\PYG{n}{shape}\PYG{p}{,} \PYG{o}{*}\PYG{n}{x}\PYG{o}{.}\PYG{n}{shape}\PYG{p}{)}
+    \PYG{n}{diag\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{org\PYGZus{}ptrn} \PYG{o}{=} \PYG{n}{get\PYGZus{}ptrns}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{)}
+    \PYG{n}{einsum}\PYG{p}{(}\PYG{n}{diag\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{j}\PYG{p}{)[:]} \PYG{o}{=} \PYG{n}{w}
+    \PYG{k}{return} \PYG{n}{einsum}\PYG{p}{(}\PYG{n}{org\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{j}\PYG{p}{)}
+\end{Verbatim}
