@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en-US" xml:lang="en-US">
+  <head>
+    <title></title>
+    <meta charset="utf-8" />
+    <meta content="TeX4ht (https://tug.org/tex4ht/)" name="generator" />
+    <meta content="width=device-width,initial-scale=1" name="viewport" />
+    <link
+      href="2024-01-18-einsum-gradient.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <meta content="2024-01-18-einsum-gradient.tex" name="src" />
+    <script>
+      window.MathJax = { tex: { tags: "ams" } };
+    </script>
+    <script
+      async="async"
+      id="MathJax-script"
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
+      type="text/javascript"
+    ></script>
+  </head>
+  <body>
+    <!-- l. 18 -->
+    <p class="noindent">
+      Last time I talked about how to find the jacobian of einsum. You can use
+      that in backpropogation but you’ll run out of RAM very quickly. Today I
+      want to explain how you can backpropogate through einsum operations
+      without needing the full jacobian. Here is the setup: we have neural
+      network \(N : \mathbb {R}^{np} \rightarrow \mathbb {R}\), and somewhere in
+      that network is an einsum operation that we want to backpropogate across.
+      For simplicity well make it matrix multiplication
+    </p>
+    <!-- l. 30 -->
+    <p class="noindent">
+      \begin {equation} X_{ij}W_{jk} = Z_{jk} \end {equation}<a id="x1-2r1"></a>
+    </p>
+    <!-- l. 32 -->
+    <p class="noindent">
+      We have the upstream gradient \(G\), which is the same shape as \(Z\), and
+      we want to find the gradients w.r.t. \(X, W\), and then generalize the
+      process to any einsum operation. If we calculate the gradient w.r.t. to a
+      single element of \(W\) we see that
+    </p>
+    <!-- l. 41 -->
+    <p class="noindent">
+      \begin {equation} \bigl (\nabla N_{W}\bigr )_{jk} = \sum _i G_{ik}X_{ij}
+      \end {equation}<a id="x1-3r2"></a>
+    </p>
+    <!-- l. 43 -->
+    <p class="noindent">
+      This is the sum of the product of the \(k\)’th column of \(G\) and the
+      \(j\)’th column of \(X\). Notice that (2) can be written as an einsum
+    </p>
+    <!-- l. 48 -->
+    <p class="noindent">
+      \begin {equation} X_{ij}G_{ik} = \bigl (\nabla N_{W} \bigr )_{jk} \end
+      {equation}<a id="x1-4r3"></a>
+    </p>
+    <!-- l. 50 -->
+    <p class="noindent">
+      This is similar to (1). We left the subscripts alone, and put the upstream
+      gradient \(G\) in place of \(W\). Lets do the same thing to find \(\nabla
+      N_X\).
+    </p>
+    <!-- l. 55 -->
+    <p class="noindent">
+      \begin {equation} \bigl (\nabla N_{X}\bigr )_{ij} = \sum _k G_{ik}W_{jk}
+      \end {equation}<a id="x1-5r4"></a>
+    </p>
+    <!-- l. 59 -->
+    <p class="noindent">
+      \begin {equation} G_{ik}W_{jk} = \bigl (\nabla N_{X} \bigr )_{ij} \end
+      {equation}<a id="x1-6r5"></a>
+    </p>
+    <!-- l. 61 -->
+    <p class="noindent">
+      For \(\nabla N_X\) we take the sum of the product of the \(i\)’th row of
+      \(G\) with the \(j\)’th row of \(W\). Comparing (1), (2), (5) we can see
+      the pattern. We leave the subscripts alone and put \(G\) in place of
+      whatever we are differentiating with respect to. This rule almost works,
+      but we can easily think of a situation where it fails. Consider
+    </p>
+    <!-- l. 69 -->
+    <p class="noindent">
+      \begin {equation} X_{ab}W_{cd} = Z_{ab} \end {equation}<a id="x1-7r6"></a>
+    </p>
+    <!-- l. 71 -->
+    <p class="noindent">our rule would give</p>
+    <!-- l. 75 -->
+    <p class="noindent">
+      \begin {equation} X_{ab}G_{ab} \xrightarrow []{??} \bigl (\nabla N_W\bigr
+      )_{cd} \end {equation}<a id="x1-8r7"></a>
+    </p>
+    <!-- l. 77 -->
+    <p class="noindent">
+      which doesnt work. There is no way to yield a \(cd\) matrix from the
+      operands on the LHS. For another example that wouldnt work Consider
+    </p>
+    <!-- l. 82 -->
+    <p class="noindent">
+      \begin {equation} X_{bij}W_{jk} = Z_{ik} \end {equation}<a
+        id="x1-9r8"
+      ></a>
+    </p>
+    <!-- l. 84 -->
+    <p class="noindent">
+      Here our rule says \(\nabla N_X\) can be found with \(G_{ik}W_{jk}
+      \xrightarrow []{??} \bigl (\nabla N_X\bigr )_{bij}\) but again this
+      operation doesnt make sense since the \(b\) dimension is missing from
+      \(G,W\). We notice that this is a
+      <span class="cmti-10x-x-109">shape </span>issue and not a
+      <span class="cmti-10x-x-109">value </span>issue. Looking at (8) we can see
+      the gradient will be the same across all batches, meaning the gradient we
+      want is some \(ij\) matrix repeated across the \(b\) dimension. To get it
+      we just need to reshape our the output from our rule . Let \(A\) be a
+      placeholder matrix to indicate the output of the einsum. The correct
+      gradient for (8) is
+    </p>
+    <!-- l. 95 -->
+    <p class="noindent">
+      \begin {equation} 1_{b} \otimes \bigl (G_{ik}W_{jk}\rightarrow A_{ij}\bigr
+      ) = \bigl (\nabla N_X\bigr )_{bij} \end {equation}<a id="x1-10r9"></a>
+    </p>
+    <!-- l. 97 -->
+    <p class="noindent">
+      We can revisit (6), (7) and get the gradient with the right shape via
+    </p>
+    <!-- l. 101 -->
+    <p class="noindent">
+      \begin {equation} 1_{cd} \otimes \bigl (X_{ab}G_{ab} \rightarrow a\bigr )
+      = \bigl (\nabla N_W\bigr )_{cd} \end {equation}<a id="x1-11r10"></a>
+    </p>
+    <!-- l. 104 -->
+    <p class="noindent">
+      At this point we are done. Backpropogating over an einsum operation can be
+      done in two steps:
+    </p>
+    <ol class="enumerate1">
+      <li class="enumerate" id="x1-13x1">
+        Take the original operation and replace the target variable with the
+        upstream gradient
+      </li>
+      <li class="enumerate" id="x1-15x2">Reshape/broadcast the result</li>
+    </ol>
+    <h3 class="likesectionHead" id="putting-it-into-code">
+      <a id="x1-1000"></a>Putting it into Code
+    </h3>
+    <!-- l. 111 -->
+    <p class="noindent">
+      Were going to write a little autograd engine. We need a class for holding
+      data, and then einsum and sigmoid functions.
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb1"
+      ><a id='x1-1015r1'></a><span id='textcolor1'><span class='cmtt-10x-x-109'>from</span></span> <span id='textcolor2'><span class='cmtt-10x-x-109'>collections</span></span> <span id='textcolor3'><span class='cmtt-10x-x-109'>import</span></span> <span id='textcolor4'><span class='cmtt-10x-x-109'>deque</span></span> 
+<a id='x1-1017r2'></a><span id='textcolor5'><span class='cmtt-10x-x-109'>import</span></span> <span id='textcolor6'><span class='cmtt-10x-x-109'>numpy</span></span> <span id='textcolor7'><span class='cmtt-10x-x-109'>as</span></span> <span id='textcolor8'><span class='cmtt-10x-x-109'>np</span></span> 
+<a id='x1-1019r3'></a> 
+<a id='x1-1021r4'></a><span id='textcolor9'><span class='cmtt-10x-x-109'>class</span></span> <span id='textcolor10'><span class='cmtt-10x-x-109'>Thing</span></span><span id='textcolor11'><span class='cmtt-10x-x-109'>:</span></span> 
+<a id='x1-1023r5'></a>    <span id='textcolor12'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor13'><span class='cmtt-10x-x-109'>__init__</span></span><span id='textcolor14'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor15'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor16'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor17'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor18'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor19'><span class='cmtt-10x-x-109'>_children</span></span><span id='textcolor20'><span class='cmtt-10x-x-109'>=</span></span><span id='textcolor21'><span class='cmtt-10x-x-109'>[])</span></span> <span id='textcolor22'><span class='cmtt-10x-x-109'>-</span><span class='cmmi-10x-x-109'>&gt;</span></span> <span id='textcolor23'><span class='cmtt-10x-x-109'>None</span></span><span id='textcolor24'><span class='cmtt-10x-x-109'>:</span></span> 
+<a id='x1-1025r6'></a>         <span id='textcolor25'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor26'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor27'><span class='cmtt-10x-x-109'>data</span></span> <span id='textcolor28'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor29'><span class='cmtt-10x-x-109'>data</span></span> <span id='textcolor30'><span class='cmtt-10x-x-109'>if</span></span> <span id='textcolor31'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor32'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor33'><span class='cmtt-10x-x-109'>shape</span></span> <span id='textcolor34'><span class='cmtt-10x-x-109'>else</span></span> <span id='textcolor35'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor36'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor37'><span class='cmtt-10x-x-109'>reshape</span></span><span id='textcolor38'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor39'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor40'><span class='cmtt-10x-x-109'>,</span></span><span id='textcolor41'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor42'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-1027r7'></a>         <span id='textcolor43'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor44'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor45'><span class='cmtt-10x-x-109'>_children</span></span> <span id='textcolor46'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor47'><span class='cmtt-10x-x-109'>_children</span></span> 
+<a id='x1-1029r8'></a>         <span id='textcolor48'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor49'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor50'><span class='cmtt-10x-x-109'>_backward</span></span> <span id='textcolor51'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor52'><span class='cmtt-10x-x-109'>lambda</span></span><span id='textcolor53'><span class='cmtt-10x-x-109'>:</span></span> <span id='textcolor54'><span class='cmtt-10x-x-109'>None</span></span> 
+<a id='x1-1031r9'></a>         <span id='textcolor55'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor56'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor57'><span class='cmtt-10x-x-109'>grad</span></span> <span id='textcolor58'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor59'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor60'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor61'><span class='cmtt-10x-x-109'>zeros_like</span></span><span id='textcolor62'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor63'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor64'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor65'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor66'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-1033r10'></a> 
+<a id='x1-1035r11'></a>    <span id='textcolor67'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor68'><span class='cmtt-10x-x-109'>backward</span></span><span id='textcolor69'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor70'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor71'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-1037r12'></a>         <span id='textcolor72'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor73'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor74'><span class='cmtt-10x-x-109'>grad</span></span><span id='textcolor75'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor76'><span class='cmtt-10x-x-109'>visited</span></span><span id='textcolor77'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor78'><span class='cmtt-10x-x-109'>queue</span></span> <span id='textcolor79'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor80'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor81'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor82'><span class='cmtt-10x-x-109'>ones</span></span><span id='textcolor83'><span class='cmtt-10x-x-109'>((</span></span><span id='textcolor84'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor85'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor86'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor87'><span class='cmtt-10x-x-109'>)),</span></span> <span id='textcolor88'><span class='cmtt-10x-x-109'>set</span></span><span id='textcolor89'><span class='cmtt-10x-x-109'>(),</span></span> <span id='textcolor90'><span class='cmtt-10x-x-109'>deque</span></span><span id='textcolor91'><span class='cmtt-10x-x-109'>([</span></span><span id='textcolor92'><span class='cmtt-10x-x-109'>self</span></span><span id='textcolor93'><span class='cmtt-10x-x-109'>])</span></span> 
+<a id='x1-1039r13'></a>         <span id='textcolor94'><span class='cmtt-10x-x-109'>while</span></span> <span id='textcolor95'><span class='cmtt-10x-x-109'>queue</span></span><span id='textcolor96'><span class='cmtt-10x-x-109'>:</span></span> <span id='textcolor97'><span class='cmtt-10x-x-109'>v</span></span> <span id='textcolor98'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor99'><span class='cmtt-10x-x-109'>queue</span></span><span id='textcolor100'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor101'><span class='cmtt-10x-x-109'>popleft</span></span><span id='textcolor102'><span class='cmtt-10x-x-109'>();</span></span> <span id='textcolor103'><span class='cmtt-10x-x-109'>[</span></span><span id='textcolor104'><span class='cmtt-10x-x-109'>visited</span></span><span id='textcolor105'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor106'><span class='cmtt-10x-x-109'>add</span></span><span id='textcolor107'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor108'><span class='cmtt-10x-x-109'>v</span></span><span id='textcolor109'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor110'><span class='cmtt-10x-x-109'>v</span></span><span id='textcolor111'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor112'><span class='cmtt-10x-x-109'>_backward</span></span><span id='textcolor113'><span class='cmtt-10x-x-109'>(),</span></span> <span id='textcolor114'><span class='cmtt-10x-x-109'>queue</span></span><span id='textcolor115'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor116'><span class='cmtt-10x-x-109'>extend</span></span><span id='textcolor117'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor118'><span class='cmtt-10x-x-109'>n</span></span> <span id='textcolor119'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor120'><span class='cmtt-10x-x-109'>n</span></span> <span id='textcolor121'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor122'><span class='cmtt-10x-x-109'>v</span></span><span id='textcolor123'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor124'><span class='cmtt-10x-x-109'>_children</span></span> <span id='textcolor125'><span class='cmtt-10x-x-109'>if</span></span> <span id='textcolor126'><span class='cmtt-10x-x-109'>n</span></span> <span id='textcolor127'><span class='cmtt-10x-x-109'>not</span></span> <span id='textcolor128'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor129'><span class='cmtt-10x-x-109'>visited</span></span><span id='textcolor130'><span class='cmtt-10x-x-109'>)][</span></span><span id='textcolor131'><span class='cmtt-10x-x-109'>0</span></span><span id='textcolor132'><span class='cmtt-10x-x-109'>]</span></span></pre>
+    </div>
+    <p>
+      This holds data/grad. I reshape scalars to \((1, 1)\) because its easier
+      to handle. Calling
+      <code class="lstinline"
+        ><span style="color: #000000">backward()</span></code
+      >
+      does BFS and calls
+      <code class="lstinline"
+        ><span style="color: #000000">._backward()</span></code
+      >
+      on all children. Pretty janky looking one-line BFS
+    </p>
+    <!-- l. 133 -->
+    <p class="noindent"></p>
+    <h4 class="likesubsectionHead" id="sigmoid"><a id="x1-2000"></a>Sigmoid</h4>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb2"
+      ><a id='x1-2008r1'></a><span id='textcolor133'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor134'><span class='cmtt-10x-x-109'>_sigmoid</span></span><span id='textcolor135'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor136'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor137'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-2010r2'></a>    <span id='textcolor138'><span class='cmtt-10x-x-109'>out</span></span> <span id='textcolor139'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor140'><span class='cmtt-10x-x-109'>Thing</span></span><span id='textcolor141'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor142'><span class='cmtt-10x-x-109'>1</span></span> <span id='textcolor143'><span class='cmtt-10x-x-109'>/</span></span> <span id='textcolor144'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor145'><span class='cmtt-10x-x-109'>1</span></span> <span id='textcolor146'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor147'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor148'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor149'><span class='cmtt-10x-x-109'>exp</span></span><span id='textcolor150'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor151'><span class='cmtt-10x-x-109'>-</span></span><span id='textcolor152'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor153'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor154'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor155'><span class='cmtt-10x-x-109'>)),</span></span> <span id='textcolor156'><span class='cmtt-10x-x-109'>_children</span></span><span id='textcolor157'><span class='cmtt-10x-x-109'>=</span></span><span id='textcolor158'><span class='cmtt-10x-x-109'>[</span></span><span id='textcolor159'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor160'><span class='cmtt-10x-x-109'>])</span></span> 
+<a id='x1-2012r3'></a>    <span id='textcolor161'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor162'><span class='cmtt-10x-x-109'>_backward</span></span><span id='textcolor163'><span class='cmtt-10x-x-109'>():</span></span> 
+<a id='x1-2014r4'></a>         <span id='textcolor164'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor165'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor166'><span class='cmtt-10x-x-109'>grad</span></span> <span id='textcolor167'><span class='cmtt-10x-x-109'>+=</span></span> <span id='textcolor168'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor169'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor170'><span class='cmtt-10x-x-109'>data</span></span> <span id='textcolor171'><span class='cmtt-10x-x-109'>*</span></span> <span id='textcolor172'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor173'><span class='cmtt-10x-x-109'>1</span></span> <span id='textcolor174'><span class='cmtt-10x-x-109'>-</span></span> <span id='textcolor175'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor176'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor177'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor178'><span class='cmtt-10x-x-109'>)</span></span> <span id='textcolor179'><span class='cmtt-10x-x-109'>*</span></span> <span id='textcolor180'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor181'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor182'><span class='cmtt-10x-x-109'>grad</span></span> 
+<a id='x1-2016r5'></a>    <span id='textcolor183'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor184'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor185'><span class='cmtt-10x-x-109'>_backward</span></span> <span id='textcolor186'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor187'><span class='cmtt-10x-x-109'>_backward</span></span> 
+<a id='x1-2018r6'></a>    <span id='textcolor188'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor189'><span class='cmtt-10x-x-109'>out</span></span></pre>
+    </div>
+    <p>
+      Straightforward. We just need to multiply
+      <code class="lstinline"
+        ><span style="color: #000000">out.grad</span></code
+      >
+      with sigmoid derivative
+    </p>
+    <!-- l. 144 -->
+    <p class="noindent"></p>
+    <h4 class="likesubsectionHead" id="einsum"><a id="x1-3000"></a>Einsum</h4>
+    <!-- l. 145 -->
+    <p class="noindent">
+      Little more involved. Basically going to do the original einsum but
+      replace the target variable with
+      <code class="lstinline"><span style="color: #000000">out.grad</span></code
+      >. However applying this to (8) directly would yield
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb3"
+      ><a id='x1-3003r1'></a><span id='textcolor190'><span class='cmtt-10x-x-109'>x_grad</span></span> <span id='textcolor191'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor192'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor193'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor194'><span class='cmtt-10x-x-109'>'ik,jk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>bij'</span></span><span id='textcolor195'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor196'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor197'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor198'><span class='cmtt-10x-x-109'>grad</span></span><span id='textcolor199'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor200'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor201'><span class='cmtt-10x-x-109'>)</span></span></pre>
+    </div>
+    <p>
+      This is going to throw an error since
+      <code class="lstinline"><span style="color: #000000">b</span></code> is
+      not defined. In a case like this we need to einsum into
+      <code class="lstinline"
+        ><span style="color: #000000"><span id="textcolor202">-</span></span
+        ><span style="color: #000000"><span id="textcolor203">&gt;</span></span
+        ><span style="color: #000000">ij</span></code
+      >
+      and then repeat along the
+      <code class="lstinline"><span style="color: #000000">b</span></code>
+      dimension. I cant explain it well in words but if you read the code it
+      should be easy to understand
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb4"
+      ><a id='x1-3033r1'></a><span id='textcolor204'><span class='cmtt-10x-x-109'>from</span></span> <span id='textcolor205'><span class='cmtt-10x-x-109'>einops</span></span> <span id='textcolor206'><span class='cmtt-10x-x-109'>import</span></span> <span id='textcolor207'><span class='cmtt-10x-x-109'>repeat</span></span> 
+<a id='x1-3035r2'></a> 
+<a id='x1-3037r3'></a><span id='textcolor208'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor209'><span class='cmtt-10x-x-109'>_einsum</span></span><span id='textcolor210'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor211'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor212'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor213'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor214'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor215'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor216'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-3039r4'></a>    <span id='textcolor217'><span class='cmtt-10x-x-109'>out</span></span> <span id='textcolor218'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor219'><span class='cmtt-10x-x-109'>Thing</span></span><span id='textcolor220'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor221'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor222'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor223'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor224'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor225'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor226'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor227'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor228'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor229'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor230'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor231'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor232'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor233'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor234'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor235'><span class='cmtt-10x-x-109'>_children</span></span><span id='textcolor236'><span class='cmtt-10x-x-109'>=</span></span><span id='textcolor237'><span class='cmtt-10x-x-109'>[</span></span><span id='textcolor238'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor239'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor240'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor241'><span class='cmtt-10x-x-109'>])</span></span> 
+<a id='x1-3041r5'></a>    <span id='textcolor242'><span class='cmtt-10x-x-109'>def</span></span> <span id='textcolor243'><span class='cmtt-10x-x-109'>_backward</span></span><span id='textcolor244'><span class='cmtt-10x-x-109'>():</span></span> 
+<a id='x1-3043r6'></a>         <span id='textcolor245'><span class='cmtt-10x-x-109'>x_ptrn</span></span><span id='textcolor246'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor247'><span class='cmtt-10x-x-109'>w_ptrn</span></span><span id='textcolor248'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor249'><span class='cmtt-10x-x-109'>z_ptrn</span></span> <span id='textcolor250'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor251'><span class='cmtt-10x-x-109'>*</span></span><span id='textcolor252'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor253'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor254'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor255'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor256'><span class='cmtt-10x-x-109'>'-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor257'><span class='cmtt-10x-x-109'>)[</span></span><span id='textcolor258'><span class='cmtt-10x-x-109'>0</span></span><span id='textcolor259'><span class='cmtt-10x-x-109'>]</span></span><span id='textcolor260'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor261'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor262'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor263'><span class='cmtt-10x-x-109'>','</span></span><span id='textcolor264'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor265'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor266'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor267'><span class='cmtt-10x-x-109'>split</span></span><span id='textcolor268'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor269'><span class='cmtt-10x-x-109'>'-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor270'><span class='cmtt-10x-x-109'>)[</span></span><span id='textcolor271'><span class='cmtt-10x-x-109'>-</span></span><span id='textcolor272'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor273'><span class='cmtt-10x-x-109'>]</span></span> 
+<a id='x1-3045r7'></a>         <span id='textcolor274'><span class='cmtt-10x-x-109'>z_ptrn</span></span> <span id='textcolor275'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor276'><span class='cmtt-10x-x-109'>z_ptrn</span></span> <span id='textcolor277'><span class='cmtt-10x-x-109'>if</span></span> <span id='textcolor278'><span class='cmtt-10x-x-109'>z_ptrn</span></span> <span id='textcolor279'><span class='cmtt-10x-x-109'>else</span></span> <span id='textcolor280'><span class='cmtt-10x-x-109'>'zy'</span></span> 
+<a id='x1-3047r8'></a> 
+<a id='x1-3049r9'></a>         <span id='textcolor281'><span class='cmtt-10x-x-109'>w_grad_ptrn</span></span> <span id='textcolor282'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor283'><span class='cmtt-10x-x-109'>''</span></span><span id='textcolor284'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor285'><span class='cmtt-10x-x-109'>join</span></span><span id='textcolor286'><span class='cmtt-10x-x-109'>([</span></span><span id='textcolor287'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor288'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor289'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor290'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor291'><span class='cmtt-10x-x-109'>w_ptrn</span></span> <span id='textcolor292'><span class='cmtt-10x-x-109'>if</span></span> <span id='textcolor293'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor294'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor295'><span class='cmtt-10x-x-109'>set</span></span><span id='textcolor296'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor297'><span class='cmtt-10x-x-109'>x_ptrn</span></span> <span id='textcolor298'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor299'><span class='cmtt-10x-x-109'>z_ptrn</span></span><span id='textcolor300'><span class='cmtt-10x-x-109'>)])</span></span> 
+<a id='x1-3051r10'></a>         <span id='textcolor301'><span class='cmtt-10x-x-109'>x_grad_ptrn</span></span> <span id='textcolor302'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor303'><span class='cmtt-10x-x-109'>''</span></span><span id='textcolor304'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor305'><span class='cmtt-10x-x-109'>join</span></span><span id='textcolor306'><span class='cmtt-10x-x-109'>([</span></span><span id='textcolor307'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor308'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor309'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor310'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor311'><span class='cmtt-10x-x-109'>x_ptrn</span></span> <span id='textcolor312'><span class='cmtt-10x-x-109'>if</span></span> <span id='textcolor313'><span class='cmtt-10x-x-109'>c</span></span> <span id='textcolor314'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor315'><span class='cmtt-10x-x-109'>set</span></span><span id='textcolor316'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor317'><span class='cmtt-10x-x-109'>w_ptrn</span></span> <span id='textcolor318'><span class='cmtt-10x-x-109'>+</span></span> <span id='textcolor319'><span class='cmtt-10x-x-109'>z_ptrn</span></span><span id='textcolor320'><span class='cmtt-10x-x-109'>)])</span></span> 
+<a id='x1-3053r11'></a> 
+<a id='x1-3055r12'></a>         <span id='textcolor321'><span class='cmtt-10x-x-109'>x_grad</span></span> <span id='textcolor322'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor323'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor324'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor325'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor326'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor327'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor328'><span class='cmtt-10x-x-109'>'{z_ptrn},{w_ptrn}-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>{x_grad_ptrn}'</span></span><span id='textcolor329'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor330'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor331'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor332'><span class='cmtt-10x-x-109'>grad</span></span><span id='textcolor333'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor334'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor335'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor336'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor337'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-3057r13'></a>         <span id='textcolor338'><span class='cmtt-10x-x-109'>w_grad</span></span> <span id='textcolor339'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor340'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor341'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor342'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor343'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor344'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor345'><span class='cmtt-10x-x-109'>'{z_ptrn},{x_ptrn}-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>{w_grad_ptrn}'</span></span><span id='textcolor346'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor347'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor348'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor349'><span class='cmtt-10x-x-109'>grad</span></span><span id='textcolor350'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor351'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor352'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor353'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor354'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-3059r14'></a> 
+<a id='x1-3061r15'></a>         <span id='textcolor355'><span class='cmtt-10x-x-109'>w_shape</span></span> <span id='textcolor356'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor357'><span class='cmtt-10x-x-109'>dict</span></span><span id='textcolor358'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor359'><span class='cmtt-10x-x-109'>zip</span></span><span id='textcolor360'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor361'><span class='cmtt-10x-x-109'>w_ptrn</span></span><span id='textcolor362'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor363'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor364'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor365'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor366'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor367'><span class='cmtt-10x-x-109'>shape</span></span><span id='textcolor368'><span class='cmtt-10x-x-109'>))</span></span> 
+<a id='x1-3063r16'></a>         <span id='textcolor369'><span class='cmtt-10x-x-109'>x_shape</span></span> <span id='textcolor370'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor371'><span class='cmtt-10x-x-109'>dict</span></span><span id='textcolor372'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor373'><span class='cmtt-10x-x-109'>zip</span></span><span id='textcolor374'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor375'><span class='cmtt-10x-x-109'>x_ptrn</span></span><span id='textcolor376'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor377'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor378'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor379'><span class='cmtt-10x-x-109'>data</span></span><span id='textcolor380'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor381'><span class='cmtt-10x-x-109'>shape</span></span><span id='textcolor382'><span class='cmtt-10x-x-109'>))</span></span> 
+<a id='x1-3065r17'></a> 
+<a id='x1-3067r18'></a>         <span id='textcolor383'><span class='cmtt-10x-x-109'>w_broadcast_string</span></span> <span id='textcolor384'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor385'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor386'><span class='cmtt-10x-x-109'>"{' '.join(w_grad_ptrn)} -</span><span class='cmmi-10x-x-109'>&gt; </span><span class='cmtt-10x-x-109'>{' '.join(w_shape.keys())}"</span></span> 
+<a id='x1-3069r19'></a>         <span id='textcolor387'><span class='cmtt-10x-x-109'>w_grad</span></span> <span id='textcolor388'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor389'><span class='cmtt-10x-x-109'>repeat</span></span><span id='textcolor390'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor391'><span class='cmtt-10x-x-109'>w_grad</span></span><span id='textcolor392'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor393'><span class='cmtt-10x-x-109'>w_broadcast_string</span></span><span id='textcolor394'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor395'><span class='cmtt-10x-x-109'>**</span></span><span id='textcolor396'><span class='cmtt-10x-x-109'>w_shape</span></span><span id='textcolor397'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-3071r20'></a> 
+<a id='x1-3073r21'></a>         <span id='textcolor398'><span class='cmtt-10x-x-109'>x_broadcast_string</span></span> <span id='textcolor399'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor400'><span class='cmtt-10x-x-109'>f</span></span><span id='textcolor401'><span class='cmtt-10x-x-109'>"{' '.join(x_grad_ptrn)} -</span><span class='cmmi-10x-x-109'>&gt; </span><span class='cmtt-10x-x-109'>{' '.join(x_shape.keys())}"</span></span> 
+<a id='x1-3075r22'></a>         <span id='textcolor402'><span class='cmtt-10x-x-109'>x_grad</span></span> <span id='textcolor403'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor404'><span class='cmtt-10x-x-109'>repeat</span></span><span id='textcolor405'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor406'><span class='cmtt-10x-x-109'>x_grad</span></span><span id='textcolor407'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor408'><span class='cmtt-10x-x-109'>x_broadcast_string</span></span><span id='textcolor409'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor410'><span class='cmtt-10x-x-109'>**</span></span><span id='textcolor411'><span class='cmtt-10x-x-109'>x_shape</span></span><span id='textcolor412'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-3077r23'></a> 
+<a id='x1-3079r24'></a>         <span id='textcolor413'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor414'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor415'><span class='cmtt-10x-x-109'>grad</span></span> <span id='textcolor416'><span class='cmtt-10x-x-109'>+=</span></span> <span id='textcolor417'><span class='cmtt-10x-x-109'>x_grad</span></span> 
+<a id='x1-3081r25'></a>         <span id='textcolor418'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor419'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor420'><span class='cmtt-10x-x-109'>grad</span></span> <span id='textcolor421'><span class='cmtt-10x-x-109'>+=</span></span> <span id='textcolor422'><span class='cmtt-10x-x-109'>w_grad</span></span> 
+<a id='x1-3083r26'></a> 
+<a id='x1-3085r27'></a>    <span id='textcolor423'><span class='cmtt-10x-x-109'>out</span></span><span id='textcolor424'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor425'><span class='cmtt-10x-x-109'>_backward</span></span> <span id='textcolor426'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor427'><span class='cmtt-10x-x-109'>_backward</span></span> 
+<a id='x1-3087r28'></a>    <span id='textcolor428'><span class='cmtt-10x-x-109'>return</span></span> <span id='textcolor429'><span class='cmtt-10x-x-109'>out</span></span></pre>
+    </div>
+    <ol class="enumerate1">
+      <li class="enumerate" id="x1-3089x1">
+        We start by making the
+        <code class="lstinline"
+          ><span style="color: #000000">_grad_ptrn</span></code
+        >’s for
+        <code class="lstinline"><span style="color: #000000">x, w</span></code
+        >. These come from the set of subscripts of the other two operands
+      </li>
+      <li class="enumerate" id="x1-3091x2">Next we calc gradient</li>
+      <li class="enumerate" id="x1-3093x3">
+        Finally we reshape the gradient by repeating along missing dimensions.
+        In (8),
+        <code class="lstinline"
+          ><span style="color: #006699">reshape</span></code
+        >
+        would get passed
+        <code class="lstinline"
+          ><span style="color: #990000">'i j -&gt; b i j'</span
+          ><span style="color: #000000"
+            >, b <span id="textcolor430">=</span>x.</span
+          ><span style="color: #006699">shape</span
+          ><span style="color: #000000"><span id="textcolor431">[</span></span
+          ><span style="color: #000000"
+            >0<span id="textcolor432">]</span></span
+          ></code
+        >
+      </li>
+    </ol>
+    <!-- l. 191 -->
+    <p class="noindent"></p>
+    <h3 class="likesectionHead" id="testing"><a id="x1-4000"></a>Testing</h3>
+    <!-- l. 192 -->
+    <p class="noindent">
+      Lets spin up a random NN and see how it goes. I dont want to code loss
+      functions today so We’ll just sum at the end.
+    </p>
+    <div class="minted-color-box" style="background-color: #24273a">
+      <pre
+        class="fancyvrb"
+        id="fancyvrb5"
+      ><a id='x1-4027r1'></a><span id='textcolor433'><span class='cmtt-10x-x-109'>import</span></span> <span id='textcolor434'><span class='cmtt-10x-x-109'>torch</span></span> 
+<a id='x1-4029r2'></a><span id='textcolor435'><span class='cmtt-10x-x-109'>from</span></span> <span id='textcolor436'><span class='cmtt-10x-x-109'>torch</span></span> <span id='textcolor437'><span class='cmtt-10x-x-109'>import</span></span> <span id='textcolor438'><span class='cmtt-10x-x-109'>einsum</span></span> 
+<a id='x1-4031r3'></a><span id='textcolor439'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor440'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor441'><span class='cmtt-10x-x-109'>manual_seed</span></span><span id='textcolor442'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor443'><span class='cmtt-10x-x-109'>10</span></span><span id='textcolor444'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4033r4'></a><span id='textcolor445'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor446'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor447'><span class='cmtt-10x-x-109'>random</span></span><span id='textcolor448'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor449'><span class='cmtt-10x-x-109'>seed</span></span><span id='textcolor450'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor451'><span class='cmtt-10x-x-109'>10</span></span><span id='textcolor452'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4035r5'></a> 
+<a id='x1-4037r6'></a> 
+<a id='x1-4039r7'></a><span id='textcolor453'><span class='cmtt-10x-x-109'>x</span></span> <span id='textcolor454'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor455'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor456'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor457'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor458'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor459'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor460'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor461'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor462'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor463'><span class='cmtt-10x-x-109'>requires_grad</span></span> <span id='textcolor464'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor465'><span class='cmtt-10x-x-109'>True</span></span><span id='textcolor466'><span class='cmtt-10x-x-109'>)</span></span> 
+<a id='x1-4041r8'></a><span id='textcolor467'><span class='cmtt-10x-x-109'>thing</span></span> <span id='textcolor468'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor469'><span class='cmtt-10x-x-109'>Thing</span></span><span id='textcolor470'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor471'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor472'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor473'><span class='cmtt-10x-x-109'>detach</span></span><span id='textcolor474'><span class='cmtt-10x-x-109'>()</span></span><span id='textcolor475'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor476'><span class='cmtt-10x-x-109'>numpy</span></span><span id='textcolor477'><span class='cmtt-10x-x-109'>())</span></span> 
+<a id='x1-4043r9'></a> 
+<a id='x1-4045r10'></a><span id='textcolor478'><span class='cmtt-10x-x-109'>shapes</span></span> <span id='textcolor479'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor480'><span class='cmtt-10x-x-109'>[(</span></span><span id='textcolor481'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor482'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor483'><span class='cmtt-10x-x-109'>4</span></span><span id='textcolor484'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor485'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor486'><span class='cmtt-10x-x-109'>4</span></span><span id='textcolor487'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor488'><span class='cmtt-10x-x-109'>5</span></span><span id='textcolor489'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor490'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor491'><span class='cmtt-10x-x-109'>1</span></span><span id='textcolor492'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor493'><span class='cmtt-10x-x-109'>2</span></span><span id='textcolor494'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor495'><span class='cmtt-10x-x-109'>5</span></span><span id='textcolor496'><span class='cmtt-10x-x-109'>),</span></span> <span id='textcolor497'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor498'><span class='cmtt-10x-x-109'>5</span></span><span id='textcolor499'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor500'><span class='cmtt-10x-x-109'>3</span></span><span id='textcolor501'><span class='cmtt-10x-x-109'>)]</span></span> 
+<a id='x1-4047r11'></a><span id='textcolor502'><span class='cmtt-10x-x-109'>ptrns</span></span> <span id='textcolor503'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor504'><span class='cmtt-10x-x-109'>[</span></span><span id='textcolor505'><span class='cmtt-10x-x-109'>'ij,jk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ik'</span></span><span id='textcolor506'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor507'><span class='cmtt-10x-x-109'>'ij,jk-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ik'</span></span><span id='textcolor508'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor509'><span class='cmtt-10x-x-109'>'ij,cij-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>ij'</span></span><span id='textcolor510'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor511'><span class='cmtt-10x-x-109'>'ab,bd-</span><span class='cmmi-10x-x-109'>&gt;</span><span class='cmtt-10x-x-109'>'</span></span><span id='textcolor512'><span class='cmtt-10x-x-109'>]</span></span> 
+<a id='x1-4049r12'></a> 
+<a id='x1-4051r13'></a><span id='textcolor513'><span class='cmtt-10x-x-109'>torch_weights</span></span> <span id='textcolor514'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor515'><span class='cmtt-10x-x-109'>[</span></span><span id='textcolor516'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor517'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor518'><span class='cmtt-10x-x-109'>randn</span></span><span id='textcolor519'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor520'><span class='cmtt-10x-x-109'>s</span></span><span id='textcolor521'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor522'><span class='cmtt-10x-x-109'>requires_grad</span></span> <span id='textcolor523'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor524'><span class='cmtt-10x-x-109'>True</span></span><span id='textcolor525'><span class='cmtt-10x-x-109'>)</span></span> <span id='textcolor526'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor527'><span class='cmtt-10x-x-109'>s</span></span> <span id='textcolor528'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor529'><span class='cmtt-10x-x-109'>shapes</span></span><span id='textcolor530'><span class='cmtt-10x-x-109'>]</span></span> 
+<a id='x1-4053r14'></a><span id='textcolor531'><span class='cmtt-10x-x-109'>thing_weights</span></span> <span id='textcolor532'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor533'><span class='cmtt-10x-x-109'>[</span></span><span id='textcolor534'><span class='cmtt-10x-x-109'>Thing</span></span><span id='textcolor535'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor536'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor537'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor538'><span class='cmtt-10x-x-109'>detach</span></span><span id='textcolor539'><span class='cmtt-10x-x-109'>()</span></span><span id='textcolor540'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor541'><span class='cmtt-10x-x-109'>numpy</span></span><span id='textcolor542'><span class='cmtt-10x-x-109'>())</span></span> <span id='textcolor543'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor544'><span class='cmtt-10x-x-109'>w</span></span> <span id='textcolor545'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor546'><span class='cmtt-10x-x-109'>torch_weights</span></span><span id='textcolor547'><span class='cmtt-10x-x-109'>]</span></span> 
+<a id='x1-4055r15'></a> 
+<a id='x1-4057r16'></a><span id='textcolor548'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor549'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor550'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor551'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor552'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor553'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor554'><span class='cmtt-10x-x-109'>thing_w</span></span><span id='textcolor555'><span class='cmtt-10x-x-109'>)</span></span> <span id='textcolor556'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor557'><span class='cmtt-10x-x-109'>zip</span></span><span id='textcolor558'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor559'><span class='cmtt-10x-x-109'>ptrns</span></span><span id='textcolor560'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor561'><span class='cmtt-10x-x-109'>torch_weights</span></span><span id='textcolor562'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor563'><span class='cmtt-10x-x-109'>thing_weights</span></span><span id='textcolor564'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-4059r17'></a>    <span id='textcolor565'><span class='cmtt-10x-x-109'>x</span></span> <span id='textcolor566'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor567'><span class='cmtt-10x-x-109'>torch</span></span><span id='textcolor568'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor569'><span class='cmtt-10x-x-109'>sigmoid</span></span><span id='textcolor570'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor571'><span class='cmtt-10x-x-109'>einsum</span></span><span id='textcolor572'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor573'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor574'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor575'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor576'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor577'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor578'><span class='cmtt-10x-x-109'>))</span></span> 
+<a id='x1-4061r18'></a>    <span id='textcolor579'><span class='cmtt-10x-x-109'>thing</span></span> <span id='textcolor580'><span class='cmtt-10x-x-109'>=</span></span> <span id='textcolor581'><span class='cmtt-10x-x-109'>_sigmoid</span></span><span id='textcolor582'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor583'><span class='cmtt-10x-x-109'>_einsum</span></span><span id='textcolor584'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor585'><span class='cmtt-10x-x-109'>ptrn</span></span><span id='textcolor586'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor587'><span class='cmtt-10x-x-109'>thing</span></span><span id='textcolor588'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor589'><span class='cmtt-10x-x-109'>thing_w</span></span><span id='textcolor590'><span class='cmtt-10x-x-109'>))</span></span> 
+<a id='x1-4063r19'></a> 
+<a id='x1-4065r20'></a><span id='textcolor591'><span class='cmtt-10x-x-109'>x</span></span><span id='textcolor592'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor593'><span class='cmtt-10x-x-109'>backward</span></span><span id='textcolor594'><span class='cmtt-10x-x-109'>()</span></span> 
+<a id='x1-4067r21'></a><span id='textcolor595'><span class='cmtt-10x-x-109'>thing</span></span><span id='textcolor596'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor597'><span class='cmtt-10x-x-109'>backward</span></span><span id='textcolor598'><span class='cmtt-10x-x-109'>()</span></span> 
+<a id='x1-4069r22'></a> 
+<a id='x1-4071r23'></a><span id='textcolor599'><span class='cmtt-10x-x-109'>for</span></span> <span id='textcolor600'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor601'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor602'><span class='cmtt-10x-x-109'>thing_w</span></span> <span id='textcolor603'><span class='cmtt-10x-x-109'>in</span></span> <span id='textcolor604'><span class='cmtt-10x-x-109'>zip</span></span><span id='textcolor605'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor606'><span class='cmtt-10x-x-109'>torch_weights</span></span><span id='textcolor607'><span class='cmtt-10x-x-109'>,</span></span> <span id='textcolor608'><span class='cmtt-10x-x-109'>thing_weights</span></span><span id='textcolor609'><span class='cmtt-10x-x-109'>):</span></span> 
+<a id='x1-4073r24'></a>    <span id='textcolor610'><span class='cmtt-10x-x-109'>print</span></span><span id='textcolor611'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor612'><span class='cmtt-10x-x-109'>np</span></span><span id='textcolor613'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor614'><span class='cmtt-10x-x-109'>allclose</span></span><span id='textcolor615'><span class='cmtt-10x-x-109'>(</span></span><span id='textcolor616'><span class='cmtt-10x-x-109'>w</span></span><span id='textcolor617'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor618'><span class='cmtt-10x-x-109'>grad</span></span><span id='textcolor619'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor620'><span class='cmtt-10x-x-109'>detach</span></span><span id='textcolor621'><span class='cmtt-10x-x-109'>()</span></span><span id='textcolor622'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor623'><span class='cmtt-10x-x-109'>numpy</span></span><span id='textcolor624'><span class='cmtt-10x-x-109'>(),</span></span> <span id='textcolor625'><span class='cmtt-10x-x-109'>thing_w</span></span><span id='textcolor626'><span class='cmtt-10x-x-109'>.</span></span><span id='textcolor627'><span class='cmtt-10x-x-109'>grad</span></span><span id='textcolor628'><span class='cmtt-10x-x-109'>))</span></span> 
+<a id='x1-4075r25'></a><span id='textcolor629'><span class='cmtt-10x-x-109'># prints all true</span></span></pre>
+    </div>
+    <!-- l. 223 -->
+    <p class="noindent">
+      Alright thats about it. We can now backpropogate through einsum operations
+      without needing the whole jacobian. This is a lot quicker, and can handle
+      real network architectures without crashing my PC.
+    </p>
+  </body>
+</html>
