@@ -1,0 +1,20 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k+kn}{import} \PYG{n+nn}{torch.nn} \PYG{k}{as} \PYG{n+nn}{nn}
+\PYG{n}{CONVERSION\PYGZus{}DICT} \PYG{o}{=} \PYG{p}{\PYGZob{}}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Linear}\PYG{p}{:} \PYG{n}{Linear}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Softmax}\PYG{p}{:} \PYG{n}{Softmax}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{CrossEntropyLoss}\PYG{p}{:} \PYG{n}{CrossEntropyLoss}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{ReLU}\PYG{p}{:} \PYG{n}{ReLU}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{GELU}\PYG{p}{:} \PYG{n}{GELU}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Embedding}\PYG{p}{:} \PYG{n}{Embedding}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Dropout}\PYG{p}{:} \PYG{n}{Dropout}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{LayerNorm}\PYG{p}{:} \PYG{n}{LayerNorm}\PYG{p}{,}
+    \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Sequential}\PYG{p}{:} \PYG{n}{Sequential}\PYG{p}{,}
+    \PYG{n}{r}\PYG{o}{.}\PYG{n}{MultiHeadSelfAttention}\PYG{p}{:} \PYG{n}{MultiheadAttention}\PYG{p}{,}
+    \PYG{n}{r}\PYG{o}{.}\PYG{n}{Block}\PYG{p}{:} \PYG{n}{Block}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+
+\PYG{k}{def} \PYG{n+nf}{convert\PYGZus{}nn\PYGZus{}module}\PYG{p}{(}\PYG{n}{x}\PYG{p}{:} \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Module}\PYG{p}{):}
+    \PYG{k}{return} \PYG{n}{CONVERSION\PYGZus{}DICT}\PYG{p}{[}\PYG{n+nb}{type}\PYG{p}{(}\PYG{n}{x}\PYG{p}{)]}\PYG{o}{.}\PYG{n}{\PYGZus{}from\PYGZus{}torch}\PYG{p}{(}\PYG{n}{x}\PYG{p}{)}
+\end{Verbatim}

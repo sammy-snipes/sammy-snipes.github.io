@@ -1,0 +1,8 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k+kn}{import} \PYG{n+nn}{numpy} \PYG{k}{as} \PYG{n+nn}{np}
+\PYG{k+kn}{from} \PYG{n+nn}{einops} \PYG{k+kn}{import} \PYG{n}{repeat}
+\PYG{k+kn}{from} \PYG{n+nn}{einops} \PYG{k+kn}{import} \PYG{n}{rearrange} \PYG{k}{as} \PYG{n}{erearrange}
+\PYG{k+kn}{import} \PYG{n+nn}{string}
+\PYG{k+kn}{from} \PYG{n+nn}{.engine} \PYG{k+kn}{import} \PYG{n}{Parameter}
+\PYG{k+kn}{from} \PYG{n+nn}{scipy.stats} \PYG{k+kn}{import} \PYG{n}{norm}
+\end{Verbatim}

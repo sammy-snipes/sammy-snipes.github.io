@@ -1,0 +1,4 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+  \PYG{n}{a}\PYG{o}{.}\PYG{n}{grad} \PYG{o}{+=} \PYG{n}{c}\PYG{o}{.}\PYG{n}{grad}
+  \PYG{n}{b}\PYG{o}{.}\PYG{n}{grad} \PYG{o}{+=} \PYG{n}{c}\PYG{o}{.}\PYG{n}{grad}
+\end{Verbatim}

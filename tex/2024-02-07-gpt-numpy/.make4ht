@@ -1,0 +1,1 @@
+set_settings{tex4ht_sty_par = "main," .. settings.tex4ht_sty_par}

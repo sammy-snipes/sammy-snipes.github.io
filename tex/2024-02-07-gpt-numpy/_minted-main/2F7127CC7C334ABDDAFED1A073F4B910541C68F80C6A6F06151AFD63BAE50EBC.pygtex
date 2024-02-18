@@ -1,0 +1,38 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k}{def} \PYG{n+nf}{einsum}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{:} \PYG{n+nb}{str}\PYG{p}{,} \PYG{o}{*}\PYG{n}{args}\PYG{p}{:} \PYG{n}{Parameter}\PYG{p}{)} \PYG{o}{\PYGZhy{}\PYGZgt{}} \PYG{n}{Parameter}\PYG{p}{:}
+    \PYG{n}{out} \PYG{o}{=} \PYG{n}{Parameter}\PYG{p}{(}\PYG{n}{np}\PYG{o}{.}\PYG{n}{einsum}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{o}{*}\PYG{p}{[}\PYG{n}{\PYGZus{}}\PYG{o}{.}\PYG{n}{data} \PYG{k}{for} \PYG{n}{\PYGZus{}} \PYG{o+ow}{in} \PYG{n}{args}\PYG{p}{]),} \PYG{n}{\PYGZus{}children}\PYG{o}{=}\PYG{n+nb}{tuple}\PYG{p}{(}\PYG{n}{args}\PYG{p}{))}
+
+    \PYG{k}{def} \PYG{n+nf}{\PYGZus{}backward}\PYG{p}{():}
+        \PYG{n}{in\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{out\PYGZus{}ptrn} \PYG{o}{=} \PYG{n}{ptrn}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{}\PYGZhy{}\PYGZgt{}\PYGZdq{}}\PYG{p}{)}
+        \PYG{n}{in\PYGZus{}ptrns} \PYG{o}{=} \PYG{n}{in\PYGZus{}ptrn}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{},\PYGZdq{}}\PYG{p}{)}
+        \PYG{k}{if} \PYG{o+ow}{not} \PYG{n}{out\PYGZus{}ptrn}\PYG{p}{:}
+            \PYG{n}{out\PYGZus{}ptrn} \PYG{o}{=} \PYG{l+s+s2}{\PYGZdq{}\PYGZdq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n+nb}{list}\PYG{p}{(}\PYG{n+nb}{set}\PYG{p}{(}\PYG{n}{string}\PYG{o}{.}\PYG{n}{ascii\PYGZus{}lowercase}\PYG{p}{)} \PYG{o}{\PYGZhy{}} \PYG{n+nb}{set}\PYG{p}{(}\PYG{n}{in\PYGZus{}ptrn}\PYG{p}{))[}\PYG{l+m+mi}{0}\PYG{p}{])}
+            \PYG{n}{temp\PYGZus{}out\PYGZus{}grad} \PYG{o}{=} \PYG{n}{np}\PYG{o}{.}\PYG{n}{expand\PYGZus{}dims}\PYG{p}{(}\PYG{n}{out}\PYG{o}{.}\PYG{n}{grad}\PYG{p}{,} \PYG{l+m+mi}{0}\PYG{p}{)}
+        \PYG{k}{else}\PYG{p}{:}
+            \PYG{n}{temp\PYGZus{}out\PYGZus{}grad} \PYG{o}{=} \PYG{n}{out}\PYG{o}{.}\PYG{n}{grad}
+
+        \PYG{k}{def} \PYG{n+nf}{calc\PYGZus{}grad}\PYG{p}{(}\PYG{n}{idx}\PYG{p}{):}
+            \PYG{n}{op\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{op} \PYG{o}{=} \PYG{n}{in\PYGZus{}ptrns}\PYG{p}{[}\PYG{n}{idx}\PYG{p}{],} \PYG{n}{args}\PYG{p}{[}\PYG{n}{idx}\PYG{p}{]}
+            \PYG{n}{other\PYGZus{}op\PYGZus{}ptrns} \PYG{o}{=} \PYG{n}{in\PYGZus{}ptrns}\PYG{p}{[:}\PYG{n}{idx}\PYG{p}{]} \PYG{o}{+} \PYG{n}{in\PYGZus{}ptrns}\PYG{p}{[}\PYG{n}{idx} \PYG{o}{+} \PYG{l+m+mi}{1} \PYG{p}{:]}
+            \PYG{n}{known\PYGZus{}dims} \PYG{o}{=} \PYG{l+s+s2}{\PYGZdq{}\PYGZdq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}
+                \PYG{p}{[}\PYG{n}{c} \PYG{k}{for} \PYG{n}{c} \PYG{o+ow}{in} \PYG{n}{op\PYGZus{}ptrn} \PYG{k}{if} \PYG{n}{c} \PYG{o+ow}{in} \PYG{l+s+s2}{\PYGZdq{}\PYGZdq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{other\PYGZus{}op\PYGZus{}ptrns}\PYG{p}{)} \PYG{o}{+} \PYG{n}{out\PYGZus{}ptrn}\PYG{p}{]}
+            \PYG{p}{)}
+            \PYG{n}{grad\PYGZus{}string} \PYG{o}{=} \PYG{l+s+sa}{f}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{out\PYGZus{}ptrn}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s2}{,}\PYG{l+s+si}{\PYGZob{}}\PYG{l+s+s1}{\PYGZsq{},\PYGZsq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{other\PYGZus{}op\PYGZus{}ptrns}\PYG{p}{)}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s2}{\PYGZhy{}\PYGZgt{}}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{known\PYGZus{}dims}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s2}{\PYGZdq{}}
+            \PYG{k}{if} \PYG{o+ow}{not} \PYG{n}{other\PYGZus{}op\PYGZus{}ptrns}\PYG{p}{:}
+                \PYG{n}{grad\PYGZus{}string} \PYG{o}{=} \PYG{n}{grad\PYGZus{}string}\PYG{o}{.}\PYG{n}{replace}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{},\PYGZdq{}}\PYG{p}{,} \PYG{l+s+s2}{\PYGZdq{}\PYGZdq{}}\PYG{p}{)}
+            \PYG{n}{grad} \PYG{o}{=} \PYG{n}{np}\PYG{o}{.}\PYG{n}{einsum}\PYG{p}{(}
+                \PYG{n}{grad\PYGZus{}string}\PYG{p}{,} \PYG{n}{temp\PYGZus{}out\PYGZus{}grad}\PYG{p}{,} \PYG{o}{*}\PYG{p}{[}\PYG{n}{\PYGZus{}}\PYG{o}{.}\PYG{n}{data} \PYG{k}{for} \PYG{n}{\PYGZus{}} \PYG{o+ow}{in} \PYG{n}{args} \PYG{k}{if} \PYG{n}{\PYGZus{}} \PYG{o}{!=} \PYG{n}{op}\PYG{p}{]}
+            \PYG{p}{)}
+            \PYG{k}{if} \PYG{n}{known\PYGZus{}dims} \PYG{o}{!=} \PYG{n}{op\PYGZus{}ptrn}\PYG{p}{:}
+                \PYG{n}{expand\PYGZus{}dims} \PYG{o}{=} \PYG{n+nb}{tuple}\PYG{p}{(}
+                    \PYG{n}{\PYGZus{}} \PYG{k}{for} \PYG{n}{\PYGZus{}}\PYG{p}{,} \PYG{n}{\PYGZus{}\PYGZus{}} \PYG{o+ow}{in} \PYG{n+nb}{enumerate}\PYG{p}{(}\PYG{n}{op\PYGZus{}ptrn}\PYG{p}{)} \PYG{k}{if} \PYG{n}{\PYGZus{}\PYGZus{}} \PYG{o+ow}{not} \PYG{o+ow}{in} \PYG{n}{known\PYGZus{}dims}
+                \PYG{p}{)}
+                \PYG{n}{grad} \PYG{o}{=} \PYG{n}{np}\PYG{o}{.}\PYG{n}{expand\PYGZus{}dims}\PYG{p}{(}\PYG{n}{grad}\PYG{p}{,} \PYG{n}{expand\PYGZus{}dims}\PYG{p}{)}
+            \PYG{k}{return} \PYG{n}{grad}
+
+        \PYG{k}{for} \PYG{n}{idx}\PYG{p}{,} \PYG{n}{arg} \PYG{o+ow}{in} \PYG{n+nb}{enumerate}\PYG{p}{(}\PYG{n}{args}\PYG{p}{):}
+            \PYG{n}{arg}\PYG{o}{.}\PYG{n}{grad} \PYG{o}{+=} \PYG{n}{calc\PYGZus{}grad}\PYG{p}{(}\PYG{n}{idx}\PYG{p}{)}
+
+    \PYG{n}{out}\PYG{o}{.}\PYG{n}{\PYGZus{}backward} \PYG{o}{=} \PYG{n}{\PYGZus{}backward}
+    \PYG{k}{return} \PYG{n}{out}
+\end{Verbatim}
