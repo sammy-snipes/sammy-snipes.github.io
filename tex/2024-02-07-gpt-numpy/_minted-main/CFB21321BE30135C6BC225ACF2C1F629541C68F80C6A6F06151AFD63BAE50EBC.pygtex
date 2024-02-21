@@ -1,0 +1,28 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{c+c1}{\PYGZsh{} torch \PYGZsh{}}
+\PYG{k}{class} \PYG{n+nc}{MultiHeadSelfAttention}\PYG{p}{(}\PYG{n}{nn}\PYG{o}{.}\PYG{n}{Module}\PYG{p}{):}
+    \PYG{k}{def} \PYG{n+nf+fm}{\PYGZus{}\PYGZus{}init\PYGZus{}\PYGZus{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,} \PYG{n}{embed\PYGZus{}dim}\PYG{p}{,} \PYG{n}{num\PYGZus{}heads}\PYG{p}{)} \PYG{o}{\PYGZhy{}\PYGZgt{}} \PYG{k+kc}{None}\PYG{p}{:}
+        \PYG{n+nb}{super}\PYG{p}{()}\PYG{o}{.}\PYG{n+nf+fm}{\PYGZus{}\PYGZus{}init\PYGZus{}\PYGZus{}}\PYG{p}{()}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{embed\PYGZus{}dim} \PYG{o}{=} \PYG{n}{embed\PYGZus{}dim}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{num\PYGZus{}heads} \PYG{o}{=} \PYG{n}{num\PYGZus{}heads}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{head\PYGZus{}dim} \PYG{o}{=} \PYG{n+nb}{int}\PYG{p}{(}\PYG{n}{embed\PYGZus{}dim} \PYG{o}{/} \PYG{n}{num\PYGZus{}heads}\PYG{p}{)}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{in\PYGZus{}proj} \PYG{o}{=} \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Linear}\PYG{p}{(}\PYG{n}{embed\PYGZus{}dim}\PYG{p}{,} \PYG{l+m+mi}{3} \PYG{o}{*} \PYG{n}{embed\PYGZus{}dim}\PYG{p}{,} \PYG{n}{bias}\PYG{o}{=}\PYG{k+kc}{True}\PYG{p}{)}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{out\PYGZus{}proj} \PYG{o}{=} \PYG{n}{nn}\PYG{o}{.}\PYG{n}{Linear}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{head\PYGZus{}dim} \PYG{o}{*} \PYG{n}{num\PYGZus{}heads}\PYG{p}{,} \PYG{n}{embed\PYGZus{}dim}\PYG{p}{,} \PYG{n}{bias}\PYG{o}{=}\PYG{k+kc}{True}\PYG{p}{)}
+
+    \PYG{k}{def} \PYG{n+nf}{forward}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,} \PYG{n}{x}\PYG{p}{):}
+        \PYG{n}{B}\PYG{p}{,} \PYG{n}{T}\PYG{p}{,} \PYG{n}{C} \PYG{o}{=} \PYG{n}{x}\PYG{o}{.}\PYG{n}{shape}
+        \PYG{n}{qvk} \PYG{o}{=} \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{in\PYGZus{}proj}\PYG{p}{(}\PYG{n}{x}\PYG{p}{)}
+        \PYG{n}{q}\PYG{p}{,} \PYG{n}{v}\PYG{p}{,} \PYG{n}{k} \PYG{o}{=} \PYG{n+nb}{tuple}\PYG{p}{(}
+            \PYG{n}{rearrange}\PYG{p}{(}\PYG{n}{qvk}\PYG{p}{,} \PYG{l+s+s2}{\PYGZdq{}b t (d k h) \PYGZhy{}\PYGZgt{} k b h t d\PYGZdq{}}\PYG{p}{,} \PYG{n}{k}\PYG{o}{=}\PYG{l+m+mi}{3}\PYG{p}{,} \PYG{n}{h}\PYG{o}{=}\PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{num\PYGZus{}heads}\PYG{p}{)}
+        \PYG{p}{)}
+
+        \PYG{n}{scaled\PYGZus{}prod} \PYG{o}{=} \PYG{n}{einsum}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{}bhid,bhjd\PYGZhy{}\PYGZgt{}bhij\PYGZdq{}}\PYG{p}{,} \PYG{n}{q}\PYG{p}{,} \PYG{n}{k}\PYG{p}{)} \PYG{o}{*} \PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{head\PYGZus{}dim}\PYG{p}{)} \PYG{o}{**} \PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.5}
+
+        \PYG{n}{mask} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{tril}\PYG{p}{(}\PYG{n}{torch}\PYG{o}{.}\PYG{n}{ones\PYGZus{}like}\PYG{p}{(}\PYG{n}{scaled\PYGZus{}prod}\PYG{p}{))}
+        \PYG{n}{scaled\PYGZus{}prod} \PYG{o}{=} \PYG{n}{scaled\PYGZus{}prod}\PYG{o}{.}\PYG{n}{masked\PYGZus{}fill}\PYG{p}{(}\PYG{n}{mask} \PYG{o}{==} \PYG{l+m+mi}{0}\PYG{p}{,} \PYG{o}{\PYGZhy{}}\PYG{n+nb}{float}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{}inf\PYGZdq{}}\PYG{p}{))}
+
+        \PYG{n}{attention} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{softmax}\PYG{p}{(}\PYG{n}{scaled\PYGZus{}prod}\PYG{p}{,} \PYG{n}{dim}\PYG{o}{=\PYGZhy{}}\PYG{l+m+mi}{1}\PYG{p}{)}
+        \PYG{n}{out} \PYG{o}{=} \PYG{n}{einsum}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{}bhij,bhjd\PYGZhy{}\PYGZgt{}bhid\PYGZdq{}}\PYG{p}{,} \PYG{n}{attention}\PYG{p}{,} \PYG{n}{v}\PYG{p}{)}
+        \PYG{n}{out} \PYG{o}{=} \PYG{n}{rearrange}\PYG{p}{(}\PYG{n}{out}\PYG{p}{,} \PYG{l+s+s2}{\PYGZdq{}b h t d \PYGZhy{}\PYGZgt{} b t (h d)\PYGZdq{}}\PYG{p}{)}
+        \PYG{k}{return} \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{out\PYGZus{}proj}\PYG{p}{(}\PYG{n}{out}\PYG{p}{)}
+\end{Verbatim}
