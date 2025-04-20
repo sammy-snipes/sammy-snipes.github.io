@@ -1,0 +1,602 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{dirtytalk}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{minted}
+\usepackage{parskip}
+\usepackage{pythonhighlight}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Overleaf Example},
+    pdfpagemode=FullScreen,
+    }
+\graphicspath{
+  {../../}
+}
+\usepackage[margin=72pt]{geometry}
+\setlength{\parindent}{0pt}
+\definecolor{puccin}{HTML}{24273a}
+\definecolor{bgrd}{HTML}{212228}
+\pagecolor{bgrd}
+\color{white}
+
+\setminted[python]{
+  breaklines = true,
+  bgcolor = puccin,
+  style = monokai,
+  fontsize = \footnotesize
+}
+\title{GPT2 in Numpy}
+\maketitle
+\begin{document}
+\section{Introduction}
+I thought it might be fun to write chat GPT in numpy. 
+The plan is to slowly build out an autograd engine until we end up with GPT2.
+The repo for this project is \href{https://github.com/sammy-snipes/numpy-GPT2}{here}. 
+
+\begin{figure}[H]
+  \begin{center}
+    % \includegraphics[width=0.8\textwidth]{/home/sammysnipes/Desktop/personal/latex-blog/assets/img/test2.png}
+    \includegraphics[width=0.8\textwidth]{/assets/img/test.jpg}
+  \end{center}
+  \caption{GPT2 architecture}\label{fig:}
+\end{figure}
+
+First I implemented it in pytorch so I could see exactly what I needed. That implementation is 
+\href{https://github.com/sammy-snipes/numpy-GPT2/blob/main/numpyGPT/pytorch_reference.py}{here}.
+I more or less copied Andrej Kaparhty's implementation from his 
+\href{https://github.com/karpathy/ng-video-lecture}{video} on it
+, except I stuck the multihead attention in a single 
+module using \texttt{einsum}. 
+
+The way I want to set up the autograd engine is to have 
+a \texttt{engine.py} file that contains a class called \texttt{Parameter} which holds data, grad, shape,..etc, and 
+implements some dunders like \texttt{\_\_add\_\_}, \texttt{\_\_mul\_\_} while tracking gradient. Then well have a \texttt{functions.py}
+file that has \texttt{Parameter} implementations for \texttt{softmax}, \texttt{gelu}, \texttt{layernorm}. Finally, there 
+will be a \texttt{models.py} file that has class wrappers to make it all feel like pytorch along with the
+GPT implementation. 
+\par To figure out what class methods we need in \texttt{Parameter} lets start by listing the functions we want, and how 
+those require \texttt{Parameter} to behave. e.g. \texttt{nn.LayerNorm} calculation uses 
+mean and variance, so to implement that,
+\texttt{Parameter} needs some kind of \texttt{mean} method.
+\begin{enumerate}
+  \item \texttt{nn.Embedding}. This is just a lookup table; nothing special required. 
+  \item \texttt{einsum}. This is explicitly used in the mutlihead-attention. \texttt{nn.Linear} is just an einsum along the
+    last two dimensions of the input, so we get that for free by implementing \texttt{einsum}.
+  \item \texttt{nn.GELU}. Nothing special required. 
+  \item \texttt{nn.Dropout}. Nothing special required.
+  \item \texttt{einops.rearrange}. This is easy to implement and read, nothing special required. 
+  \item \texttt{nn.Softmax}. Nothing special required.
+  \item \texttt{nn.CrossEntropyLoss}. Let $Y$ be the target, and our prediction 
+    $\hat{Y} = \text{model}(X)$, then CE loss is given by
+    \begin{equation}
+      CE(Y, \hat{Y}) = -\frac{1}{N}\sum_{n, c}Y \odot \log \bigg(\text{softmax} \big(\hat{Y}\big) \bigg) 
+    \end{equation}
+    The haddamard product and sum can be handled by one einsum pattern \texttt{ij,ij->}, and we already
+    have softmax above, so thats missing is \texttt{torch.log} which we can write a function for, 
+    and scalar multiplication which we can handle with the \texttt{\_\_rmul\_\_} dunder.  
+  \item \texttt{nn.LayerNorm}. The equation is
+    \begin{equation}
+      ln = \frac{x - \text{E}[x]}{\sqrt{\text{Var}[x] + \epsilon}} * \gamma + \beta
+    \end{equation}
+    where $\gamma, \beta$ are the same shape as the dimensions being normalized. This will require a \texttt{.mean()} 
+    method. We can get variance with
+    \begin{equation}
+      \text{var} = \text{E}[x^2] - \text{E}[x]^2
+    \end{equation}
+    For all this we need the following dunders: \texttt{\_\_pow\_\_}, \texttt{\_\_mul\_\_}, \texttt{\_\_add\_\_}, \texttt{\_\_sub\_\_}. 
+    Instead of implemting \texttt{\_\_div\_\_} ill use negative exponents and multiplication so itll look like 
+    \begin{minted}{python}
+    ln = (x - x.mean()) * ((x**2).mean() - (x.mean())**2 + eps) ** -0.5 ...stuff...
+    \end{minted}
+\end{enumerate}
+That covers it for functions. For class methods theres two things we need that have yet to crop up. Both are in 
+the attention implementation. Here is the forward method, in torch.
+\begin{minted}{python}
+# torch # 
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads) -> None:
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = int(embed_dim / num_heads)
+        self.in_proj = nn.Linear(embed_dim, 3 * embed_dim, bias=True)
+        self.out_proj = nn.Linear(self.head_dim * num_heads, embed_dim, bias=True)
+
+    def forward(self, x):
+        B, T, C = x.shape
+        qvk = self.in_proj(x)
+        q, v, k = tuple(
+            rearrange(qvk, "b t (d k h) -> k b h t d", k=3, h=self.num_heads)
+        )
+
+        scaled_prod = einsum("bhid,bhjd->bhij", q, k) * (self.head_dim) ** -0.5
+
+        mask = torch.tril(torch.ones_like(scaled_prod))
+        scaled_prod = scaled_prod.masked_fill(mask == 0, -float("inf"))
+
+        attention = torch.softmax(scaled_prod, dim=-1)
+        out = einsum("bhij,bhjd->bhid", attention, v)
+        out = rearrange(out, "b h t d -> b t (h d)")
+        return self.out_proj(out)
+\end{minted}
+First we need a way to unpack a \texttt{Parameter} along an axis, and second we need masking support. All together
+the class methods we need are:
+\begin{enumerate}
+  \item \texttt{\_\_add\_\_}
+  \item \texttt{\_\_sub\_\_}
+  \item \texttt{\_\_mul\_\_}
+  \item \texttt{\_\_pow\_\_}
+  \item \texttt{\_\_rmul\_\_}
+  \item \texttt{mean()}
+  \item \texttt{split()}
+  \item \texttt{masked\_fill()}
+\end{enumerate}
+and then some utility stuff
+\begin{enumerate}[resume]
+  \item \texttt{backward()}, something to trigger backpropogation 
+  \item \texttt{sum()}, nice to have
+  \item \texttt{broadcast\_helper}, broadcasting introduces some complications to backprop. Since addition, subtraction
+    and multiplication all broadcast, we are going to make a seperate method get gradients for broadcasted operations.
+\end{enumerate}
+Cool, we have our grocery list of methods and functions so lets get down to business
+\section{The class}
+The \texttt{backward()} method is going to dictate a lot of what we do here so lets settle that first. I liked the 
+way Andrej Kaparthy laid it out in his micrograd \href{https://www.youtube.com/watch?v=VMj-3S1tku0}{video}. Every \texttt{Parameter} will have a lambda function 
+\texttt{\_backward} that dictates how its gradient interacts with its children during backpropogation, and calling
+the class method \texttt{backward()} will call the \texttt{\_backward} function of everything in the computational graph. 
+For an example of how this should work
+\begin{minted}{python}
+a, b = Parameter(2), Parameter(3)
+c = a + b
+d = c ** 2 - c
+
+def d_backward():
+  c.grad += 2 * c - 1
+
+def c_backward():
+  a.grad += c.grad
+  b.grad += c.grad
+
+d._backward = d_backward
+c._backward = c_backward
+
+d.backward()
+
+print(a.grad, b.grad) # 9, 9, theoretically...
+\end{minted}
+with that were ready to start
+\subsection{init and backward}
+\begin{minted}{python}
+import numpy as np
+from typing import List, Tuple
+
+
+class Parameter:
+    def __init__(self, data, _children=()) -> None:
+        self.data = = data
+        self.grad = np.zeros_like(self.data)
+        self._children = _children
+        self.shape = self.data.shape
+        self.dim = len(self.shape) if self.shape else 0
+        self._backward = lambda: None
+
+    def backward(self):
+        assert self.grad.shape == ()
+        self.grad = 1.0
+        visited, stack = set(), []
+
+        def dfs(node):
+            visited.add(node)
+            for child in node._children:
+                if child not in visited:
+                    dfs(child)
+            stack.append(node)
+
+        dfs(self)
+
+        for node in stack[::-1]:
+            node._backward()
+\end{minted}
+For backward we first assert that its a scalar, and then call the \texttt{\_backward} method of everything in the 
+reverse order of the computational graph. 
+\subsection{split}
+We want to be able to split a \texttt{Parameter}, do stuff to the children, and have the gradient backpropogate 
+correctly. 
+\begin{minted}{python}
+    def split(self, dim=0) -> List["Parameter"]:
+        data = np.moveaxis(self.data, dim, 0)
+        kids = []
+        for idx, slice in enumerate(data):
+            kid = Parameter(slice, _children=(self,))
+
+            def _undo_split(idx=idx, kid=kid):
+                np.moveaxis(self.grad, dim, 0)[idx] += kid.grad
+
+            kid._backward = _undo_split
+            kids.append(kid)
+        return kids
+\end{minted}
+Using \texttt{np.moveaxis} to bring the split axis to the zero dimension, we split the \texttt{Parameter} into children. 
+To backpropogate we use \texttt{np.moveaxis} with the reverse operands to return a view, and then just add the child grad.
+\subsection{masked fill}
+\begin{minted}{python}
+    def masked_fill(self, mask: np.ndarray, value: float) -> "Parameter":
+        out_data = np.copy(self.data)
+        out_data[mask] = value
+        out = Parameter(out_data, _children=(self,))
+
+        def _backward():
+            masked_grad = np.copy(out.grad)
+            masked_grad[mask] = 0
+            self.grad += masked_grad
+
+        out._backward = _backward
+        return out
+\end{minted}
+For this, any value that gets masked has a zero gradient. For mask you would pass a boolean array like \texttt{x == 0}
+\subsection{sum}
+\begin{minted}{python}
+    def sum(self, dim=None, keepdim=False) -> "Parameter":
+        out = Parameter(self.data.sum(axis=dim, keepdims=keepdim), _children=(self,))
+
+        def _backward():
+            self.grad += (
+                np.expand_dims(out.grad, dim)
+                if (dim is not None and not keepdim)
+                else out.grad
+            )
+
+        out._backward = _backward
+        return out
+\end{minted}
+When \texttt{keepdim == True} dims are summed to be 1, so there are no broadcasting issues. If its false,
+suppose \texttt{a.shape = [2, 3, 4]}, and \texttt{c = a.sum(-1, 1)}, then backward pass will have
+\texttt{a.grad += c.grad}, which bricks since adding shapes
+\texttt{[2, 3, 4] += [3]} isnt valid. The solution is expand collapsed dims to 1.
+
+\subsection{mean}
+\begin{minted}{python}
+    def mean(self, dim: Tuple[int], keepdim=True) -> "Parameter":
+        m = np.mean(self.data, dim, keepdims=keepdim)
+        out = Parameter(m, _children=(self,))
+
+        def _backward():
+            original_shape = [int(_) for _ in self.data.shape]
+            new_shape = [original_shape[d] for d in dim]
+            out_grad = out.grad if keepdim else np.expand_dims(out.grad, dim)
+            self.grad += out_grad / np.prod(new_shape)
+
+        out._backward = _backward
+        return out
+\end{minted}
+The grad for mean is just
+\begin{equation}
+  \frac{\partial}{\partial X} \big[\frac{1}{N}\sum{X}\big]= \frac{1}{N} 
+\end{equation}
+and we use the same reshaping we used for \texttt{sum}
+\subsection{dunder}
+Lets first solve the broadcasting issue. Lets say somewhere in our network we have \texttt{a, b} of shapes
+\texttt{[2, 3, 4],  [2, 3]}, and \texttt{c = a + b}. The backward pass will require
+\begin{minted}{python}
+  a.grad += c.grad
+  b.grad += c.grad
+\end{minted}
+but line 2 fails since \texttt{[2, 3, 4]} cant be broadcast into \texttt{[2, 3]}. So what is the grad supposed to be?
+When \texttt{a, b} get added, the broadcasting adds \texttt{b} to each array along the 0'th dimension of \texttt{a}. 
+So the gradient w.r.t \texttt{a} is \texttt{c.grad} summed along the 0'th dimension. In general, to get the grad w.r.t. the broadcasted
+operand you just sum the grad from the left until it has the same shape as the operand. 
+\par Theres one more case to handle. If we had \texttt{a, b} of shapes \texttt{[2, 3, 4], [2, 1, 4]}, we'll throw a 
+broadcasting error in the backward pass since \texttt{[2, 3, 4]} can be broadcast into \texttt{[2, 1, 4]}
+The solution is sum \texttt{c.grad} to 1 along the 1'th dimension. \texttt{[2, 3, 4] -> [2, 1, 4]}. In general, the grad
+has to be summed to 1 in whichever dims the broadcasted operand has dimension length 1. 
+\par combinging both these cases
+\begin{minted}{python}
+    @staticmethod
+    def broadcast_helper(grad: np.ndarray, a: np.ndarray) -> np.ndarray:
+        if grad.shape == a.shape:
+            return grad
+        else:
+            sum_dims = tuple(range(len(grad.shape) - len(a.shape)))
+            sum_to_one = tuple(_ for _, __ in enumerate(a.shape) if __ == 1)
+            return grad.sum(sum_dims).sum(sum_to_one, keepdims=True)
+\end{minted}
+First we sum from the left until \texttt{grad} and \texttt{a} have the same number of dimensions, then whichever
+dims have length 1 in \texttt{a} get summed to 1 in \texttt{grad}. With this out of the way we can write our dunders. 
+These are all straight forward so ill show addition and multiplication. \texttt{\_\_pow\_\_} doesnt have 
+any broadcasting and the implementation is exactly what you expect.
+\begin{minted}{python}
+    def __add__(self, other) -> "Parameter":
+        other = other if isinstance(other, Parameter) else Parameter(other)
+        out = Parameter(self.data + other.data, _children=(self, other))
+
+        def _backward():
+            self.grad += self.broadcast_helper(out.grad, self.grad)
+            other.grad += self.broadcast_helper(out.grad, other.grad)
+
+        out._backward = _backward
+        return out
+
+    def __mul__(self, other: "Parameter") -> "Parameter":
+        out = Parameter(self.data * other.data, _children=(self, other))
+
+        def _backward():
+            self.grad += self.broadcast_helper(out.grad * other.data, self.grad)
+            other.grad += self.broadcast_helper(out.grad * self.data, other.grad)
+
+        out._backward = _backward
+        return out
+\end{minted}
+\section{Functions}
+I said this was going to be in numpy but I guess I lied. 
+\begin{minted}{python}
+import numpy as np
+from einops import repeat
+from einops import rearrange as erearrange
+import string
+from .engine import Parameter
+from scipy.stats import norm
+\end{minted}
+SciPy is for \texttt{GELU}, and the einops stuff is because I'm going to implement a rearrange function for 
+\texttt{Parameter} that just calls the einops version lol. We've built out far enough that a lot of the function
+implementations are straightforward. 
+\subsection{einsum}
+I have a more detailed post about how this is calculated \href{https://sammy-snipes.github.io/einsum-gradient/}{here}, but heres the final code 
+\begin{minted}{python}
+def einsum(ptrn: str, *args: Parameter) -> Parameter:
+    out = Parameter(np.einsum(ptrn, *[_.data for _ in args]), _children=tuple(args))
+
+    def _backward():
+        in_ptrn, out_ptrn = ptrn.split("->")
+        in_ptrns = in_ptrn.split(",")
+        if not out_ptrn:
+            out_ptrn = "".join(list(set(string.ascii_lowercase) - set(in_ptrn))[0])
+            temp_out_grad = np.expand_dims(out.grad, 0)
+        else:
+            temp_out_grad = out.grad
+
+        def calc_grad(idx):
+            op_ptrn, op = in_ptrns[idx], args[idx]
+            other_op_ptrns = in_ptrns[:idx] + in_ptrns[idx + 1 :]
+            known_dims = "".join(
+                [c for c in op_ptrn if c in "".join(other_op_ptrns) + out_ptrn]
+            )
+            grad_string = f"{out_ptrn},{','.join(other_op_ptrns)}->{known_dims}"
+            if not other_op_ptrns:
+                grad_string = grad_string.replace(",", "")
+            grad = np.einsum(
+                grad_string, temp_out_grad, *[_.data for _ in args if _ != op]
+            )
+            if known_dims != op_ptrn:
+                expand_dims = tuple(
+                    _ for _, __ in enumerate(op_ptrn) if __ not in known_dims
+                )
+                grad = np.expand_dims(grad, expand_dims)
+            return grad
+
+        for idx, arg in enumerate(args):
+            arg.grad += calc_grad(idx)
+
+    out._backward = _backward
+    return out
+\end{minted}
+For an einsum pattern like
+\texttt{ij,jk->ik}, the grad w.r.t. operand 0 is \texttt{ik,jk->ij}. Problems arise if you sum to a scalar. E.g. 
+\texttt{ij,jk->} would reverse to \texttt{,jk-ij}. 
+\par This bricks becasue operand zero needs a string, and the \texttt{i} in the output string is unknown.
+The first problem we solve by making grad 1d if its scalar, and assigning it a unique letter. 
+We solve the second issue by making the out string of our reversed einsum only the known dimensions. i.e. the dimensions of the operand contained in the other operands or output. So the grad string of \texttt{ij,jk->} would be 
+\texttt{q,jk->j}, where \texttt{q} is an arbitrary letter. 
+This is of course the wrong shape but we solve by expanding to 1 along the missing dimensions,
+and then the gradient broadcasts with no issues.
+\par This works for any number of arguments, im pretty sure.
+
+\par At this point we are basically done, really. We have core operations in our \texttt{Parameter} class methods and 
+we just added support for arbitrary einsum operations. From here on out we dont even need to think. Softmax is just 
+\begin{minted}{python}
+def exp(x: Parameter) -> Parameter:
+    out = Parameter(np.exp(x.data), _children=(x,))
+
+    def _backward():
+        x.grad += out.data * out.grad
+
+    out._backward = _backward
+    return out
+
+
+def softmax(x: Parameter, dim=-1) -> Parameter:
+    e = exp(x)
+    out = e * (e.sum(dim, keepdim=True) ** -1)
+    return out
+\end{minted}
+ and cross entropy is just
+ \begin{minted}{python}
+def log(x: Parameter) -> Parameter:
+    out = Parameter(np.log(x.data), _children=(x,))
+
+    def _backward():
+        x.grad += out.grad * (1 / x.data)
+
+    out._backward = _backward
+    return out
+
+
+def cross_entropy_loss(x: Parameter, y: Parameter, dim=-1) -> Parameter:
+    if any([_.data.dtype != np.float64 for _ in (x, y)]):
+        raise TypeError("cross entropy takes float64")
+    log_soft = log(softmax(x, dim=dim))
+    ptrn = string.ascii_lowercase[: len(x.data.shape)]
+    return (float(-x.data.shape[0]) ** -1) * einsum(f"{ptrn},{ptrn}->", log_soft, y)
+ \end{minted}
+ I'm going to leave out the rest of the functions, since the implementation is exactly what you expect. 
+\section{GPT}
+At this point I wrote a bunch of code to make class wrappers for our functions so they feel more like
+pytorch. For example heres the embedding
+\begin{minted}{python}
+class Embedding(Module):
+    def __init__(self, num_embeddings, embedding_dim) -> None:
+        super().__init__()
+        self.weight = Parameter(shape=(num_embeddings, embedding_dim))
+
+    @classmethod
+    def _from_torch(cls, x: torch.nn.Module) -> "Module":
+        self = cls.__new__(cls)
+        attrs = [("weight", self._weight_to_param)]
+        return self.set_attrs(x, self, attrs)
+
+    def forward(self, x: Parameter):
+        return embed(x.data, self.weight)
+\end{minted}
+The \texttt{\_from\_torch} method allows me to initialize an \texttt{Embedding} object from a \texttt{nn.Embedding}
+by copying+detaching its weight, converting it to a \texttt{Parameter}, and assigning it to the object. The 
+\texttt{\_weight\_to\_param} does what the name implies, and theres another method \texttt{\_do\_nothing} used for
+assigning non-learnable attributes like softmax dim, layer norm shape, ...etc. Finally in theres a global function
+\texttt{convert\_nn\_module} that converts \texttt{nn.Module}'s to their \texttt{Parameter} based equivalent by checking a 
+dictionary. 
+\begin{minted}{python}
+import torch.nn as nn
+CONVERSION_DICT = {
+    nn.Linear: Linear,
+    nn.Softmax: Softmax,
+    nn.CrossEntropyLoss: CrossEntropyLoss,
+    nn.ReLU: ReLU,
+    nn.GELU: GELU,
+    nn.Embedding: Embedding,
+    nn.Dropout: Dropout,
+    nn.LayerNorm: LayerNorm,
+    nn.Sequential: Sequential,
+    r.MultiHeadSelfAttention: MultiheadAttention,
+    r.Block: Block,
+}
+
+
+def convert_nn_module(x: nn.Module):
+    return CONVERSION_DICT[type(x)]._from_torch(x)
+\end{minted}
+\par The final GPT implementation
+looks alot like the original pytorch implementation.
+\begin{minted}{python}
+class MultiheadAttention(Module):
+    def __init__(self, embed_dim, num_heads) -> None:
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = int(embed_dim / num_heads)
+        self.in_proj = Linear(embed_dim, 3 * embed_dim, bias=True)
+        self.out_proj = Linear(embed_dim, embed_dim, bias=True)
+
+    @classmethod
+    def _from_torch(cls, x: nn.Module):
+        self = cls.__new__(cls)
+        attrs = [
+            ("in_proj", convert_nn_module),
+            ("out_proj", convert_nn_module),
+            ("embed_dim", self._do_nothing),
+            ("num_heads", self._do_nothing),
+            ("head_dim", self._do_nothing),
+        ]
+        return self.set_attrs(x, self, attrs)
+
+    def forward(self, x: Parameter):
+        qvk = self.in_proj(x)
+        qvk = rearrange(qvk, "b t (d k h) -> k b h t d", k=3, h=self.num_heads)
+        q, v, k = qvk.split(0)
+
+        scaled_product = (self.head_dim**-0.5) * einsum("bhid,bhjd->bhij", q, k)
+
+        mask = np.tril(np.ones_like(scaled_product.data))
+        scaled_product = scaled_product.masked_fill(mask == 0, -np.inf)
+
+        attention = softmax(scaled_product, dim=-1)
+        out = einsum("bhij,bhjd->bhid", attention, v)
+        out = rearrange(out, "b h t d -> b t (h d)", h=self.num_heads, d=self.head_dim)
+        return self.out_proj(out)
+
+    def parameters(self):
+        return self.in_proj.parameters() + self.out_proj.parameters()
+
+
+class Block(Module):
+    def __init__(self, embed_dim, num_heads, p=0.0):
+        super().__init__()
+        self.ln1, self.ln2 = [
+            LayerNorm(normalized_shape=(embed_dim,)) for _ in range(2)
+        ]
+        self.attn = MultiheadAttention(embed_dim, num_heads)
+
+        self.mlp = Sequential(
+            Linear(embed_dim, embed_dim * 4),
+            GELU(),
+            Linear(embed_dim * 4, embed_dim),
+            Dropout(p),
+        )
+
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
+        return x
+
+    @classmethod
+    def _from_torch(cls, x: nn.Module):
+        self = cls.__new__(cls)
+        attrs = [
+            ("ln1", convert_nn_module),
+            ("ln2", convert_nn_module),
+            ("attn", convert_nn_module),
+            ("mlp", convert_nn_module),
+        ]
+        return self.set_attrs(x, self, attrs)
+
+    def parameters(self):
+        return (
+            self.ln1.parameters()
+            + self.ln2.parameters()
+            + self.attn.parameters()
+            + self.mlp.parameters()
+        )
+
+
+class GPT(Module):
+    def __init__(self, vocab_size, embed_dim, num_heads, seq_length, n_blocks) -> None:
+        super().__init__()
+        self.token_embedding = Embedding(vocab_size, embed_dim)
+        self.position_embedding = Embedding(seq_length, embed_dim)
+        self.blocks = Sequential(
+            *[Block(embed_dim, num_heads) for _ in range(n_blocks)]
+        )
+        self.ln_f = LayerNorm((embed_dim,))
+        self.lm_head = Linear(embed_dim, vocab_size)
+
+    def forward(self, idx: Parameter):
+        B, T = idx.shape
+        tok_emb = self.token_embedding(idx)
+        pos_emb = self.position_embedding(Parameter(np.arange(T)))
+        x = tok_emb + pos_emb
+        x = self.blocks(x)
+        x = self.ln_f(x)
+        logits = self.lm_head(x)
+        return logits
+
+    @classmethod
+    def _from_torch(cls, x: nn.Module):
+        self = cls.__new__(cls)
+        attrs = [
+            ("token_embedding", convert_nn_module),
+            ("position_embedding", convert_nn_module),
+            ("blocks", convert_nn_module),
+            ("ln_f", convert_nn_module),
+            ("lm_head", convert_nn_module),
+        ]
+        return self.set_attrs(x, self, attrs)
+\end{minted}
+And thats it. We got GPT2 running in numpy. I tested this with no dropout, since I dont know how to synchronize
+random states between numpy and torch, and the otuputs/gradients are all identical. Pretty dope.
+\end{document}

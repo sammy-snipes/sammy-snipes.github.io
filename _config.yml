@@ -1,0 +1,9 @@
+title: My LaTeX Blog
+description: A blog with raw LaTeX articles
+baseurl: ""
+url: "https://username.github.io"
+markdown: kramdown
+kramdown:
+  math_engine: none
+plugins:
+  - jekyll-github-metadata

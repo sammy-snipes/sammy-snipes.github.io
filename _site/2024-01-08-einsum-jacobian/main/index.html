@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2024-01-08-einsum-jacobian</title>
+  <!-- <link rel="stylesheet" href="/assets/css/style.css"> -->
+  <link rel="stylesheet" href="/assets/katex/katex/katex.min.css">
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <script src="/assets/katex/katex/katex.min.js"></script>
+  <script src="/assets/katex/katex/contrib/auto-render.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      renderMathInElement(document.body, {
+        delimiters: [
+          {left: "$$", right: "$$", display: true},
+          {left: "\\[", right: "\\]", display: true},
+          {left: "$", right: "$", display: false},
+          {left: "\\(", right: "\\)", display: false}
+        ]
+      });
+    });
+  </script>
+
+
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/">Home</a>
+    <a href="/posts/">Posts</a>
+    <a href="/about/">About</a>
+  </nav>
+  <div class="container">
+  <header class="post-header">
+    <!-- <h1 class="post-title">2024-01-08-einsum-jacobian</h1> -->
+    <div class="post-meta">
+      <time datetime="2024-01-08T00:00:00-05:00">
+        January 8, 2024
+      </time>
+      <!--  -->
+      <!-- <span class="post-categories"> -->
+      <!--    -->
+      <!--     <span class="category">latex</span> -->
+      <!--    -->
+      <!-- </span> -->
+      <!--  -->
+    </div>
+  </header>
+
+  <article class="post-content">
+    <html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>main</title>
+  
+  <script defer="" src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css" />
+</head>
+<body>
+<p>You can write NN’s, CNN’s, and even transformers in terms of einsum
+and activation functions. You could build an autograd library around
+einsum and activations and it could handle modern architectures. That
+sounds funny, so I want to give it a try. When you look at these its not
+immediately clear how to differentiate them.</p>
+<div class="sourceCode" id="cb1" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>z <span class="op">=</span> einsum(<span class="st">&#39;abc,dck-&gt;adbk&#39;</span>, x, w)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>dx <span class="op">=</span> ???</span></code></pre></div>
+<h1 class="unnumbered" id="the-process">The process</h1>
+<p>Its three steps:</p>
+<ol>
+<li><p>initialize</p></li>
+<li><p>put values from in</p></li>
+<li><p>if necessary, collapse/reshape</p></li>
+</ol>
+<h2 class="unnumbered" id="step-1">Step 1</h2>
+<p>In general, something like can be viewed as a function</p>
+<p><span class="math display">E : \mathbb{R}^{\text{x.shape}}\rightarrow
+\mathbb{R}^{\text{z.shape}}</span></p>
+<p>but instead we are going to view the output as being zero-embedded
+into</p>
+<p><span class="math display">E : \mathbb{R}^{\text{x.shape}}\rightarrow
+\mathbb{R}^{\text{z.shape}} \hookrightarrow
+\mathbb{R}^{(\text{x.shape})\times(\text{w.shape})}</span> Thus our
+jacobian will be of shape <span class="math inline">(\text{x.shape}
+\times \text{w.shape}) \times \text{x.shape}</span> where</p>
+<p><span class="math display">j_{ijklmn} = \frac{\partial
+z_{ijkl}}{\partial x_{mn}}</span> (if <span class="math inline">X</span>
+and <span class="math inline">W</span> are both 2-dimensional matricies.
+For 3, 4-d you’d need more subscripts). This probably seems goofy, but
+it has some nice organizational properties</p>
+<h2 class="unnumbered" id="step-2">Step 2</h2>
+<p>In this embedding no dimensions are summed. So every element of <span class="math inline">Z</span> must either be <span class="math inline">0</span>, by embedding, or something from <span class="math inline">X</span> multiplied by something from <span class="math inline">W</span>.</p>
+<p><span class="math display">z_{ijkl} =
+\begin{cases}
+    0 \\
+    x_{ij}w_{kl}
+\end{cases}</span></p>
+<p>Ok, where is <span class="math inline">Z</span> defined (not embedded
+to zero)? This is probably easiest to show by example</p>
+<ol>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijkl} =
+        \begin{cases}
+        x_{ij}w_{kl} &amp; \text{if } \ j = k \\
+        0  &amp; \text{else } \\
+        \end{cases}</span></p></li>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijkl} =
+        \begin{cases}
+        x_{ij}w_{kl} &amp; \text{if }\ i = k, j = l  \\
+        0  &amp; \text{else} \\
+        \end{cases}</span></p></li>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijklm} =
+        \begin{cases}
+        x_{ijk}w_{lm} &amp; \text{if } \ i = l \\
+        0  &amp; \text{else} \\
+        \end{cases}</span></p></li>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijklm} =
+        \begin{cases}
+        x_{ijk}w_{lm}  \\
+        \end{cases}</span></p></li>
+</ol>
+<p><span class="math inline">Z</span> is only defined along the axes
+that get multiplied together.</p>
+<p>Looking at these its also clear that <span class="math inline">z_{ijkl}</span> is independent of <span class="math inline">x_{mn}</span> for <span class="math inline">(ij)\neq(mn)</span>. i.e. <span class="math display">\frac{\partial z_{ijkl}}{\partial x_{mn}} =
+\begin{cases}
+    w_{kl} &amp; \text{if } \ i = m, j = n \\
+    0 &amp; \text{else}
+\end{cases}</span></p>
+<p>So in general our jacobian should be organized like this <span class="math display">j_{ijklmn} =
+\begin{cases}
+    w_{kl} &amp; \text{if } \ i=m,j=n, \ z_{ijkl} \text{ is defined}\\
+    0 &amp; \text{else}
+\end{cases}</span></p>
+<p>For examples 1-4, we populate the jacobian as follows</p>
+<div class="sourceCode" id="cb2" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;ijjkij-&gt;ijk&#39;</span>, jacobian)[:] <span class="op">=</span> w</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. input pattern &#39;ij,ij-&gt;ij&#39;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;ijijij-&gt;ij&#39;</span>, jacobian)[:] <span class="op">=</span> w</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. input pattern &#39;bij,bk-&gt;bij&#39;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;bijbkbij-&gt;ijbk&#39;</span>, jacobian)[:] <span class="op">=</span> w</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. input pattern &#39;bij,kl-&gt;bijkl&#39;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;bijklbij-&gt;bijkl&#39;</span>, jacobian)[:] <span class="op">=</span> w</span></code></pre></div>
+<div class="sourceCode" id="cb3" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> jacobian_diagonal(ptrn):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    op1, op2 <span class="op">=</span> ptrn.split(<span class="st">&#39;-&gt;&#39;</span>)[<span class="dv">0</span>].split(<span class="st">&#39;,&#39;</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    start <span class="op">=</span> (op1 <span class="op">+</span> op2) <span class="op">+</span> op1</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    end <span class="op">=</span> <span class="st">&quot;&quot;</span>.join([c <span class="cf">for</span> c <span class="kw">in</span> op1 <span class="cf">if</span> c <span class="kw">not</span> <span class="kw">in</span> op2]) <span class="op">+</span> op2</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">&quot;</span></span></code></pre></div>
+<p>We are broadcasting into , the shape of corresponds with , so has to
+be the last dimensions of the <em>diagonal</em> in order for the
+broadcasting to work.<br />
+<br />
+And thats it for step 2. Our jacobian has the correct values in the
+correct positions. It just needs to be reshaped in accordance with the
+original einsum.</p>
+<h3 class="unnumbered" id="step-3">Step 3</h3>
+<p>Whatever axis summing or swapping happened in the original einsum now
+needs to happen in our jacobian. Remember our jacobian is <span class="math inline">\big(\text{x.shape} \times \text{w.shape} \big)
+\times \text{x.shape}</span>. So we need to sum/swap the first <span class="math inline">\big(\text{x.shape} \times \text{w.shape}
+\big)</span> dims the same way as the original while leaving the
+trailing <span class="math inline">\text{x.shape}</span> dimensions
+alone. For examples 1-4 this would be</p>
+<div class="sourceCode" id="cb4" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;ijjkab-&gt;ikab&#39;</span>, jacobian) </span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. input pattern &#39;ij,ij-&gt;ij&#39;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;ijijab-&gt;ijab&#39;</span>, jacobian) </span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. input pattern &#39;bij,bk-&gt;bij&#39;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;bijbkbab-&gt;ijab&#39;</span>, jacobian) </span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. input pattern &#39;bij,kl-&gt;bijkl&#39;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;bijklabc-&gt;bijklabc&#39;</span>, jacobian)</span></code></pre></div>
+<p>The subscript names dont matter as long as you sum the right stuff.
+For 1 we could do . We can write a simple function that generates this
+einsum pattern by using elipses.</p>
+<div class="sourceCode" id="cb5" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> organize_jacobian(ptrn):</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    start, end <span class="op">=</span> ptrn.replace(<span class="st">&#39;,&#39;</span>, <span class="st">&#39;&#39;</span>).split(<span class="st">&#39;-&gt;&#39;</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">...-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">...&quot;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>organize_jacobian(<span class="st">&#39;ij,jk-&gt;ik&#39;</span>)</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co"># returns ijjk...-&gt;ik...</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>organize_jacobian(<span class="st">&#39;ij,ij-&gt;&#39;</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co"># returns bijbik...-&gt;bij...</span></span></code></pre></div>
+<h1 class="unnumbered" id="final-product">Final Product</h1>
+<p>lets write a little function that does the whole thing.</p>
+<div class="sourceCode" id="cb6" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> torch <span class="im">import</span> einsum</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> torch.autograd.functional <span class="im">import</span> jacobian</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> jacobian_diag_ptrn(ptrn):</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    op1, op2 <span class="op">=</span> ptrn.split(<span class="st">&#39;-&gt;&#39;</span>)[<span class="dv">0</span>].split(<span class="st">&#39;,&#39;</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    start <span class="op">=</span> (op1 <span class="op">+</span> op2) <span class="op">+</span> op1</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    end <span class="op">=</span> <span class="st">&quot;&quot;</span>.join([c <span class="cf">for</span> c <span class="kw">in</span> op1 <span class="cf">if</span> c <span class="kw">not</span> <span class="kw">in</span> op2]) <span class="op">+</span> op2</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">&quot;</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> organize_jacobian_ptrn(ptrn):</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    start, end <span class="op">=</span> ptrn.replace(<span class="st">&#39;,&#39;</span>, <span class="st">&#39;&#39;</span>).split(<span class="st">&#39;-&gt;&#39;</span>)</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">...-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">...&quot;</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> get_ptrns(ptrn):</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> jacobian_diag_ptrn(ptrn), organize_jacobian_ptrn(ptrn)</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> einsum_jacobian(ptrn, x, w):</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    j <span class="op">=</span> torch.zeros(<span class="op">*</span>x.shape, <span class="op">*</span>w.shape, <span class="op">*</span>x.shape)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    diag_ptrn, org_ptrn <span class="op">=</span> get_ptrns(ptrn)</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>    einsum(diag_ptrn, j)[:] <span class="op">=</span> w</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> einsum(org_ptrn, j)</span></code></pre></div>
+<p>now test</p>
+<div class="sourceCode" id="cb7" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sanity(ptrn, x, w):</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    f <span class="op">=</span> <span class="kw">lambda</span> x: einsum(ptrn, x, w)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    j <span class="op">=</span> jacobian(f, x)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    manual_j <span class="op">=</span> einsum_jacobian(ptrn, x, w)</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> torch.allclose(j, manual_j)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>ptrn1 <span class="op">=</span> <span class="st">&#39;ij,jk-&gt;ik&#39;</span> <span class="co"># mm</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>x1, w1 <span class="op">=</span> torch.randn(<span class="dv">2</span>, <span class="dv">3</span>), torch.randn(<span class="dv">3</span>, <span class="dv">4</span>)</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ptrn2 <span class="op">=</span> <span class="st">&#39;bij,bjk-&gt;bik&#39;</span> <span class="co"># bmm</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>x2, w2 <span class="op">=</span> torch.randn(<span class="dv">5</span>, <span class="dv">3</span>, <span class="dv">8</span>), torch.randn(<span class="dv">5</span>, <span class="dv">8</span>, <span class="dv">9</span>)</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>ptrn3 <span class="op">=</span> <span class="st">&#39;bchwkt,fckt-&gt;bfhw&#39;</span> <span class="co"># convolution</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>x3, w3 <span class="op">=</span> torch.randn(<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">2</span>, <span class="dv">2</span>), torch.randn(<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">2</span>, <span class="dv">2</span>)</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>ptrn4 <span class="op">=</span> <span class="st">&#39;abcd,efd-&gt;&#39;</span> <span class="co"># ???</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>x4, w4 <span class="op">=</span> torch.randn(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>), torch.randn(<span class="dv">9</span>, <span class="dv">10</span>, <span class="dv">4</span>)</span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>stuff <span class="op">=</span> [(ptrn1, x1, w1), (ptrn2, x2, w2), (ptrn3, x3, w3), (ptrn4, x4, w4)]</span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>results <span class="op">=</span> [sanity(<span class="op">*</span>thing) <span class="cf">for</span> thing <span class="kw">in</span> stuff] </span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>results</span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="co"># [True, True, True, True]</span></span></code></pre></div>
+<p>And thats how you get the jacobian of einsum. Its not something youd
+ever use since its so enourmous you run out of RAM with anything more
+than toy examples, but still kinda neat.</p>
+</body>
+</html>
+
+
+  </article>
+
+  <footer class="post-footer">
+    <div class="post-nav">
+      
+      
+      <a class="next" href="/2024-01-18-einsum-gradient/main/">2024-01-18-einsum-gradient &raquo;</a>
+      
+    </div>
+  </footer>
+</div>
+
+<!-- --- -->
+<!-- layout: default -->
+<!-- --- -->
+<!-- <div class="container"> -->
+<!--   <header class="post-header"> -->
+<!--     <div class="post-meta"> -->
+<!--       <time datetime="2024-01-08T00:00:00-05:00"> -->
+<!--         <em>January 8, 2024</em> <!-- Italic date --> -->
+<!--       </time> -->
+<!--        -->
+<!--       <span class="post-categories"> -->
+<!--          -->
+<!--           <span class="category">latex</span> -->
+<!--          -->
+<!--       </span> -->
+<!--        -->
+<!--     </div> -->
+<!--   </header> -->
+<!---->
+<!--   <article class="post-content"> -->
+<!--     <html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>main</title>
+  
+  <script defer="" src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css" />
+</head>
+<body>
+<p>You can write NN’s, CNN’s, and even transformers in terms of einsum
+and activation functions. You could build an autograd library around
+einsum and activations and it could handle modern architectures. That
+sounds funny, so I want to give it a try. When you look at these its not
+immediately clear how to differentiate them.</p>
+<div class="sourceCode" id="cb1" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>z <span class="op">=</span> einsum(<span class="st">&#39;abc,dck-&gt;adbk&#39;</span>, x, w)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>dx <span class="op">=</span> ???</span></code></pre></div>
+<h1 class="unnumbered" id="the-process">The process</h1>
+<p>Its three steps:</p>
+<ol>
+<li><p>initialize</p></li>
+<li><p>put values from in</p></li>
+<li><p>if necessary, collapse/reshape</p></li>
+</ol>
+<h2 class="unnumbered" id="step-1">Step 1</h2>
+<p>In general, something like can be viewed as a function</p>
+<p><span class="math display">E : \mathbb{R}^{\text{x.shape}}\rightarrow
+\mathbb{R}^{\text{z.shape}}</span></p>
+<p>but instead we are going to view the output as being zero-embedded
+into</p>
+<p><span class="math display">E : \mathbb{R}^{\text{x.shape}}\rightarrow
+\mathbb{R}^{\text{z.shape}} \hookrightarrow
+\mathbb{R}^{(\text{x.shape})\times(\text{w.shape})}</span> Thus our
+jacobian will be of shape <span class="math inline">(\text{x.shape}
+\times \text{w.shape}) \times \text{x.shape}</span> where</p>
+<p><span class="math display">j_{ijklmn} = \frac{\partial
+z_{ijkl}}{\partial x_{mn}}</span> (if <span class="math inline">X</span>
+and <span class="math inline">W</span> are both 2-dimensional matricies.
+For 3, 4-d you’d need more subscripts). This probably seems goofy, but
+it has some nice organizational properties</p>
+<h2 class="unnumbered" id="step-2">Step 2</h2>
+<p>In this embedding no dimensions are summed. So every element of <span class="math inline">Z</span> must either be <span class="math inline">0</span>, by embedding, or something from <span class="math inline">X</span> multiplied by something from <span class="math inline">W</span>.</p>
+<p><span class="math display">z_{ijkl} =
+\begin{cases}
+    0 \\
+    x_{ij}w_{kl}
+\end{cases}</span></p>
+<p>Ok, where is <span class="math inline">Z</span> defined (not embedded
+to zero)? This is probably easiest to show by example</p>
+<ol>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijkl} =
+        \begin{cases}
+        x_{ij}w_{kl} &amp; \text{if } \ j = k \\
+        0  &amp; \text{else } \\
+        \end{cases}</span></p></li>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijkl} =
+        \begin{cases}
+        x_{ij}w_{kl} &amp; \text{if }\ i = k, j = l  \\
+        0  &amp; \text{else} \\
+        \end{cases}</span></p></li>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijklm} =
+        \begin{cases}
+        x_{ijk}w_{lm} &amp; \text{if } \ i = l \\
+        0  &amp; \text{else} \\
+        \end{cases}</span></p></li>
+<li><p>Consider , in our embedding we get the tensor <span class="math display">z_{ijklm} =
+        \begin{cases}
+        x_{ijk}w_{lm}  \\
+        \end{cases}</span></p></li>
+</ol>
+<p><span class="math inline">Z</span> is only defined along the axes
+that get multiplied together.</p>
+<p>Looking at these its also clear that <span class="math inline">z_{ijkl}</span> is independent of <span class="math inline">x_{mn}</span> for <span class="math inline">(ij)\neq(mn)</span>. i.e. <span class="math display">\frac{\partial z_{ijkl}}{\partial x_{mn}} =
+\begin{cases}
+    w_{kl} &amp; \text{if } \ i = m, j = n \\
+    0 &amp; \text{else}
+\end{cases}</span></p>
+<p>So in general our jacobian should be organized like this <span class="math display">j_{ijklmn} =
+\begin{cases}
+    w_{kl} &amp; \text{if } \ i=m,j=n, \ z_{ijkl} \text{ is defined}\\
+    0 &amp; \text{else}
+\end{cases}</span></p>
+<p>For examples 1-4, we populate the jacobian as follows</p>
+<div class="sourceCode" id="cb2" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;ijjkij-&gt;ijk&#39;</span>, jacobian)[:] <span class="op">=</span> w</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. input pattern &#39;ij,ij-&gt;ij&#39;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;ijijij-&gt;ij&#39;</span>, jacobian)[:] <span class="op">=</span> w</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. input pattern &#39;bij,bk-&gt;bij&#39;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;bijbkbij-&gt;ijbk&#39;</span>, jacobian)[:] <span class="op">=</span> w</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. input pattern &#39;bij,kl-&gt;bijkl&#39;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>einsum(<span class="st">&#39;bijklbij-&gt;bijkl&#39;</span>, jacobian)[:] <span class="op">=</span> w</span></code></pre></div>
+<div class="sourceCode" id="cb3" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> jacobian_diagonal(ptrn):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    op1, op2 <span class="op">=</span> ptrn.split(<span class="st">&#39;-&gt;&#39;</span>)[<span class="dv">0</span>].split(<span class="st">&#39;,&#39;</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    start <span class="op">=</span> (op1 <span class="op">+</span> op2) <span class="op">+</span> op1</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    end <span class="op">=</span> <span class="st">&quot;&quot;</span>.join([c <span class="cf">for</span> c <span class="kw">in</span> op1 <span class="cf">if</span> c <span class="kw">not</span> <span class="kw">in</span> op2]) <span class="op">+</span> op2</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">&quot;</span></span></code></pre></div>
+<p>We are broadcasting into , the shape of corresponds with , so has to
+be the last dimensions of the <em>diagonal</em> in order for the
+broadcasting to work.<br />
+<br />
+And thats it for step 2. Our jacobian has the correct values in the
+correct positions. It just needs to be reshaped in accordance with the
+original einsum.</p>
+<h3 class="unnumbered" id="step-3">Step 3</h3>
+<p>Whatever axis summing or swapping happened in the original einsum now
+needs to happen in our jacobian. Remember our jacobian is <span class="math inline">\big(\text{x.shape} \times \text{w.shape} \big)
+\times \text{x.shape}</span>. So we need to sum/swap the first <span class="math inline">\big(\text{x.shape} \times \text{w.shape}
+\big)</span> dims the same way as the original while leaving the
+trailing <span class="math inline">\text{x.shape}</span> dimensions
+alone. For examples 1-4 this would be</p>
+<div class="sourceCode" id="cb4" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;ijjkab-&gt;ikab&#39;</span>, jacobian) </span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. input pattern &#39;ij,ij-&gt;ij&#39;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;ijijab-&gt;ijab&#39;</span>, jacobian) </span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. input pattern &#39;bij,bk-&gt;bij&#39;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;bijbkbab-&gt;ijab&#39;</span>, jacobian) </span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. input pattern &#39;bij,kl-&gt;bijkl&#39;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>jacobian <span class="op">=</span> einsum(<span class="st">&#39;bijklabc-&gt;bijklabc&#39;</span>, jacobian)</span></code></pre></div>
+<p>The subscript names dont matter as long as you sum the right stuff.
+For 1 we could do . We can write a simple function that generates this
+einsum pattern by using elipses.</p>
+<div class="sourceCode" id="cb5" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> organize_jacobian(ptrn):</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    start, end <span class="op">=</span> ptrn.replace(<span class="st">&#39;,&#39;</span>, <span class="st">&#39;&#39;</span>).split(<span class="st">&#39;-&gt;&#39;</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">...-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">...&quot;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>organize_jacobian(<span class="st">&#39;ij,jk-&gt;ik&#39;</span>)</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co"># returns ijjk...-&gt;ik...</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>organize_jacobian(<span class="st">&#39;ij,ij-&gt;&#39;</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co"># returns bijbik...-&gt;bij...</span></span></code></pre></div>
+<h1 class="unnumbered" id="final-product">Final Product</h1>
+<p>lets write a little function that does the whole thing.</p>
+<div class="sourceCode" id="cb6" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> torch <span class="im">import</span> einsum</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> torch.autograd.functional <span class="im">import</span> jacobian</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> jacobian_diag_ptrn(ptrn):</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    op1, op2 <span class="op">=</span> ptrn.split(<span class="st">&#39;-&gt;&#39;</span>)[<span class="dv">0</span>].split(<span class="st">&#39;,&#39;</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    start <span class="op">=</span> (op1 <span class="op">+</span> op2) <span class="op">+</span> op1</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    end <span class="op">=</span> <span class="st">&quot;&quot;</span>.join([c <span class="cf">for</span> c <span class="kw">in</span> op1 <span class="cf">if</span> c <span class="kw">not</span> <span class="kw">in</span> op2]) <span class="op">+</span> op2</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">&quot;</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> organize_jacobian_ptrn(ptrn):</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    start, end <span class="op">=</span> ptrn.replace(<span class="st">&#39;,&#39;</span>, <span class="st">&#39;&#39;</span>).split(<span class="st">&#39;-&gt;&#39;</span>)</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f&quot;</span><span class="sc">{</span>start<span class="sc">}</span><span class="ss">...-&gt;</span><span class="sc">{</span>end<span class="sc">}</span><span class="ss">...&quot;</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> get_ptrns(ptrn):</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> jacobian_diag_ptrn(ptrn), organize_jacobian_ptrn(ptrn)</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> einsum_jacobian(ptrn, x, w):</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    j <span class="op">=</span> torch.zeros(<span class="op">*</span>x.shape, <span class="op">*</span>w.shape, <span class="op">*</span>x.shape)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    diag_ptrn, org_ptrn <span class="op">=</span> get_ptrns(ptrn)</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>    einsum(diag_ptrn, j)[:] <span class="op">=</span> w</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> einsum(org_ptrn, j)</span></code></pre></div>
+<p>now test</p>
+<div class="sourceCode" id="cb7" data-bgcolor="puccin"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sanity(ptrn, x, w):</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    f <span class="op">=</span> <span class="kw">lambda</span> x: einsum(ptrn, x, w)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    j <span class="op">=</span> jacobian(f, x)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    manual_j <span class="op">=</span> einsum_jacobian(ptrn, x, w)</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> torch.allclose(j, manual_j)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>ptrn1 <span class="op">=</span> <span class="st">&#39;ij,jk-&gt;ik&#39;</span> <span class="co"># mm</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>x1, w1 <span class="op">=</span> torch.randn(<span class="dv">2</span>, <span class="dv">3</span>), torch.randn(<span class="dv">3</span>, <span class="dv">4</span>)</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ptrn2 <span class="op">=</span> <span class="st">&#39;bij,bjk-&gt;bik&#39;</span> <span class="co"># bmm</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>x2, w2 <span class="op">=</span> torch.randn(<span class="dv">5</span>, <span class="dv">3</span>, <span class="dv">8</span>), torch.randn(<span class="dv">5</span>, <span class="dv">8</span>, <span class="dv">9</span>)</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>ptrn3 <span class="op">=</span> <span class="st">&#39;bchwkt,fckt-&gt;bfhw&#39;</span> <span class="co"># convolution</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>x3, w3 <span class="op">=</span> torch.randn(<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">2</span>, <span class="dv">2</span>), torch.randn(<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">2</span>, <span class="dv">2</span>)</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>ptrn4 <span class="op">=</span> <span class="st">&#39;abcd,efd-&gt;&#39;</span> <span class="co"># ???</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>x4, w4 <span class="op">=</span> torch.randn(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>), torch.randn(<span class="dv">9</span>, <span class="dv">10</span>, <span class="dv">4</span>)</span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>stuff <span class="op">=</span> [(ptrn1, x1, w1), (ptrn2, x2, w2), (ptrn3, x3, w3), (ptrn4, x4, w4)]</span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>results <span class="op">=</span> [sanity(<span class="op">*</span>thing) <span class="cf">for</span> thing <span class="kw">in</span> stuff] </span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>results</span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="co"># [True, True, True, True]</span></span></code></pre></div>
+<p>And thats how you get the jacobian of einsum. Its not something youd
+ever use since its so enourmous you run out of RAM with anything more
+than toy examples, but still kinda neat.</p>
+</body>
+</html>
+
+ -->
+<!--   </article> -->
+<!---->
+<!--   <footer class="post-footer"> -->
+<!--     <div class="post-nav"> -->
+<!--        -->
+<!--        -->
+<!--       <a class="next" href="/2024-01-18-einsum-gradient/main/">2024-01-18-einsum-gradient &raquo;</a> -->
+<!--        -->
+<!--     </div> -->
+<!--   </footer> -->
+<!-- </div> -->
+
+</body>
+</html>
+

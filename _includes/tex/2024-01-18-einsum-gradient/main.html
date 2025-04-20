@@ -1,0 +1,213 @@
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>main</title>
+  
+  <script defer=""
+  src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <link rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css" />
+</head>
+<body>
+<p>Last time I talked about how to find the jacobian of einsum. You can
+use that in backpropogation but you’ll run out of RAM very quickly.
+Today I want to explain how you can backpropogate through einsum
+operations without needing the full jacobian. Here is the setup: we have
+neural network <span class="math inline">N : \mathbb{R}^{np} \rightarrow
+\mathbb{R}</span>, and somewhere in that network is an einsum operation
+that we want to backpropogate across. For simplicity well make it matrix
+multiplication</p>
+<p><span class="math display">X_{ij}W_{jk} = Z_{jk}</span></p>
+<p>We have the upstream gradient <span class="math inline">G</span>,
+which is the same shape as <span class="math inline">Z</span>, and we
+want to find the gradients w.r.t. <span class="math inline">X, W</span>,
+and then generalize the process to any einsum operation. If we calculate
+the gradient w.r.t. to a single element of <span
+class="math inline">W</span> we see that</p>
+<p><span class="math display">\bigl(\nabla N_{W}\bigr)_{jk} = \sum_i
+G_{ik}X_{ij}</span></p>
+<p>This is the sum of the product of the <span
+class="math inline">k</span>’th column of <span
+class="math inline">G</span> and the <span
+class="math inline">j</span>’th column of <span
+class="math inline">X</span>. Notice that (2) can be written as an
+einsum</p>
+<p><span class="math display">X_{ij}G_{ik} = \bigl(\nabla N_{W}
+\bigr)_{jk}</span></p>
+<p>This is similar to (1). We left the subscripts alone, and put the
+upstream gradient <span class="math inline">G</span> in place of <span
+class="math inline">W</span>. Lets do the same thing to find <span
+class="math inline">\nabla N_X</span>.</p>
+<p><span class="math display">\bigl(\nabla N_{X}\bigr)_{ij} = \sum_k
+G_{ik}W_{jk}</span></p>
+<p><span class="math display">G_{ik}W_{jk} = \bigl(\nabla N_{X}
+\bigr)_{ij}</span></p>
+<p>For <span class="math inline">\nabla N_X</span> we take the sum of
+the product of the <span class="math inline">i</span>’th row of <span
+class="math inline">G</span> with the <span
+class="math inline">j</span>’th row of <span
+class="math inline">W</span>. Comparing (1), (2), (5) we can see the
+pattern. We leave the subscripts alone and put <span
+class="math inline">G</span> in place of whatever we are differentiating
+with respect to. This rule almost works, but we can easily think of a
+situation where it fails. Consider</p>
+<p><span class="math display">X_{ab}W_{cd} = Z_{ab}</span></p>
+<p>our rule would give</p>
+<p><span class="math display">X_{ab}G_{ab} \xrightarrow[]{??}
+\bigl(\nabla N_W\bigr)_{cd}</span></p>
+<p>which doesnt work. There is no way to yield a <span
+class="math inline">cd</span> matrix from the operands on the LHS. For
+another example that wouldnt work Consider</p>
+<p><span class="math display">X_{bij}W_{jk} = Z_{ik}</span></p>
+<p>Here our rule says <span class="math inline">\nabla N_X</span> can be
+found with <span class="math inline">G_{ik}W_{jk} \xrightarrow[]{??}
+\bigl(\nabla N_X\bigr)_{bij}</span> but again this operation doesnt make
+sense since the <span class="math inline">b</span> dimension is missing
+from <span class="math inline">G,W</span>. We notice that this is a
+<em>shape</em> issue and not a <em>value</em> issue. Looking at (8) we
+can see the gradient will be the same across all batches, meaning the
+gradient we want is some <span class="math inline">ij</span> matrix
+repeated across the <span class="math inline">b</span> dimension. To get
+it we just need to reshape our the output from our rule . Let <span
+class="math inline">A</span> be a placeholder matrix to indicate the
+output of the einsum. The correct gradient for (8) is</p>
+<p><span class="math display">1_{b} \otimes\bigl(G_{ik}W_{jk}\rightarrow
+A_{ij}\bigr) = \bigl(\nabla N_X\bigr)_{bij}</span></p>
+<p>We can revisit (6), (7) and get the gradient with the right shape
+via</p>
+<p><span class="math display">1_{cd} \otimes \bigl(X_{ab}G_{ab}
+\rightarrow a\bigr) = \bigl(\nabla N_W\bigr)_{cd}</span></p>
+<p>At this point we are done. Backpropogating over an einsum operation
+can be done in two steps:</p>
+<ol>
+<li><p>Take the original operation and replace the target variable with
+the upstream gradient</p></li>
+<li><p>Reshape/broadcast the result</p></li>
+</ol>
+<h1 class="unnumbered" id="putting-it-into-code">Putting it into
+Code</h1>
+<p>Were going to write a little autograd engine. We need a class for
+holding data, and then einsum and sigmoid functions.</p>
+<div class="sourceCode" id="cb1" data-bgcolor="puccin"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> collections <span class="im">import</span> deque</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Thing:</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, data, _children<span class="op">=</span>[]) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.data <span class="op">=</span> data <span class="cf">if</span> data.shape <span class="cf">else</span> data.reshape(<span class="dv">1</span>,<span class="dv">1</span>)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>._children <span class="op">=</span> _children</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>._backward <span class="op">=</span> <span class="kw">lambda</span>: <span class="va">None</span>  </span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.grad <span class="op">=</span> np.zeros_like(<span class="va">self</span>.data)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>):</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.grad, visited, queue <span class="op">=</span> np.ones((<span class="dv">1</span>, <span class="dv">1</span>)), <span class="bu">set</span>(), deque([<span class="va">self</span>])</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">while</span> queue: v <span class="op">=</span> queue.popleft()<span class="op">;</span> [visited.add(v), v._backward(), queue.extend(n <span class="cf">for</span> n <span class="kw">in</span> v._children <span class="cf">if</span> n <span class="kw">not</span> <span class="kw">in</span> visited)][<span class="dv">0</span>]</span></code></pre></div>
+<p>This holds data/grad. I reshape scalars to <span
+class="math inline">(1, 1)</span> because its easier to handle. Calling
+does BFS and calls on all children. Pretty janky looking one-line
+BFS</p>
+<h2 class="unnumbered" id="sigmoid">Sigmoid</h2>
+<div class="sourceCode" id="cb2" data-bgcolor="puccin"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _sigmoid(x):</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Thing(<span class="dv">1</span> <span class="op">/</span> (<span class="dv">1</span> <span class="op">+</span> np.exp(<span class="op">-</span>x.data)), _children<span class="op">=</span>[x])</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>        x.grad <span class="op">+=</span> out.data <span class="op">*</span> (<span class="dv">1</span> <span class="op">-</span> out.data) <span class="op">*</span> out.grad</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span></code></pre></div>
+<p>Straightforward. We just need to multiply with sigmoid derivative</p>
+<h2 class="unnumbered" id="einsum">Einsum</h2>
+<p>Little more involved. Basically going to do the original einsum but
+replace the target variable with . However applying this to (8) directly
+would yield</p>
+<div class="sourceCode" id="cb3" data-bgcolor="puccin"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>x_grad <span class="op">=</span> einsum(<span class="st">&#39;ik,jk-&gt;bij&#39;</span>, out.grad, w)</span></code></pre></div>
+<p>This is going to throw an error since is not defined. In a case like
+this we need to einsum into and then repeat along the dimension. I cant
+explain it well in words but if you read the code it should be easy to
+understand</p>
+<div class="sourceCode" id="cb4" data-bgcolor="puccin"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> einops <span class="im">import</span> repeat</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _einsum(ptrn, x, w):</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Thing(np.einsum(ptrn, x.data, w.data), _children<span class="op">=</span>[x, w])</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>        x_ptrn, w_ptrn, z_ptrn <span class="op">=</span> <span class="op">*</span>ptrn.split(<span class="st">&#39;-&gt;&#39;</span>)[<span class="dv">0</span>].split(<span class="st">&#39;,&#39;</span>), ptrn.split(<span class="st">&#39;-&gt;&#39;</span>)[<span class="op">-</span><span class="dv">1</span>]</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        z_ptrn <span class="op">=</span> z_ptrn <span class="cf">if</span> z_ptrn <span class="cf">else</span> <span class="st">&#39;zy&#39;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        w_grad_ptrn <span class="op">=</span> <span class="st">&#39;&#39;</span>.join([c <span class="cf">for</span> c <span class="kw">in</span> w_ptrn <span class="cf">if</span> c <span class="kw">in</span> <span class="bu">set</span>(x_ptrn <span class="op">+</span> z_ptrn)])</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>        x_grad_ptrn <span class="op">=</span> <span class="st">&#39;&#39;</span>.join([c <span class="cf">for</span> c <span class="kw">in</span> x_ptrn <span class="cf">if</span> c <span class="kw">in</span> <span class="bu">set</span>(w_ptrn <span class="op">+</span> z_ptrn)])</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        x_grad <span class="op">=</span> np.einsum(<span class="ss">f&#39;</span><span class="sc">{</span>z_ptrn<span class="sc">}</span><span class="ss">,</span><span class="sc">{</span>w_ptrn<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>x_grad_ptrn<span class="sc">}</span><span class="ss">&#39;</span>, out.grad, w.data)</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>        w_grad <span class="op">=</span> np.einsum(<span class="ss">f&#39;</span><span class="sc">{</span>z_ptrn<span class="sc">}</span><span class="ss">,</span><span class="sc">{</span>x_ptrn<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>w_grad_ptrn<span class="sc">}</span><span class="ss">&#39;</span>, out.grad, x.data)</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>        w_shape <span class="op">=</span> <span class="bu">dict</span>(<span class="bu">zip</span>(w_ptrn, w.data.shape))</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>        x_shape <span class="op">=</span> <span class="bu">dict</span>(<span class="bu">zip</span>(x_ptrn, x.data.shape))</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>        w_broadcast_string <span class="op">=</span> <span class="ss">f&quot;</span><span class="sc">{</span><span class="st">&#39; &#39;</span><span class="sc">.</span>join(w_grad_ptrn)<span class="sc">}</span><span class="ss"> -&gt; </span><span class="sc">{</span><span class="st">&#39; &#39;</span><span class="sc">.</span>join(w_shape.keys())<span class="sc">}</span><span class="ss">&quot;</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>        w_grad <span class="op">=</span> repeat(w_grad, w_broadcast_string, <span class="op">**</span>w_shape)</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>        x_broadcast_string <span class="op">=</span> <span class="ss">f&quot;</span><span class="sc">{</span><span class="st">&#39; &#39;</span><span class="sc">.</span>join(x_grad_ptrn)<span class="sc">}</span><span class="ss"> -&gt; </span><span class="sc">{</span><span class="st">&#39; &#39;</span><span class="sc">.</span>join(x_shape.keys())<span class="sc">}</span><span class="ss">&quot;</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>        x_grad <span class="op">=</span> repeat(x_grad, x_broadcast_string, <span class="op">**</span>x_shape)</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>        x.grad <span class="op">+=</span> x_grad</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>        w.grad <span class="op">+=</span> w_grad</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span></code></pre></div>
+<ol>
+<li><p>We start by making the ’s for . These come from the set of
+subscripts of the other two operands</p></li>
+<li><p>Next we calc gradient</p></li>
+<li><p>Finally we reshape the gradient by repeating along missing
+dimensions. In (8), would get passed</p></li>
+</ol>
+<h1 class="unnumbered" id="testing">Testing</h1>
+<p>Lets spin up a random NN and see how it goes. I dont want to code
+loss functions today so We’ll just sum at the end.</p>
+<div class="sourceCode" id="cb5" data-bgcolor="puccin"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> torch <span class="im">import</span> einsum</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>torch.manual_seed(<span class="dv">10</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">10</span>)</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> torch.randn(<span class="dv">2</span>, <span class="dv">3</span>, requires_grad <span class="op">=</span> <span class="va">True</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>thing <span class="op">=</span> Thing(x.detach().numpy())</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>shapes <span class="op">=</span> [(<span class="dv">3</span>, <span class="dv">4</span>), (<span class="dv">4</span>, <span class="dv">5</span>), (<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">5</span>), (<span class="dv">5</span>, <span class="dv">3</span>)]</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>ptrns <span class="op">=</span> [<span class="st">&#39;ij,jk-&gt;ik&#39;</span>, <span class="st">&#39;ij,jk-&gt;ik&#39;</span>, <span class="st">&#39;ij,cij-&gt;ij&#39;</span>, <span class="st">&#39;ab,bd-&gt;&#39;</span>]</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>torch_weights <span class="op">=</span> [torch.randn(s, requires_grad <span class="op">=</span> <span class="va">True</span>) <span class="cf">for</span> s <span class="kw">in</span> shapes]</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>thing_weights <span class="op">=</span> [Thing(w.detach().numpy()) <span class="cf">for</span> w <span class="kw">in</span> torch_weights]</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (ptrn, w, thing_w) <span class="kw">in</span> <span class="bu">zip</span>(ptrns, torch_weights, thing_weights):</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> torch.sigmoid(einsum(ptrn, x, w))</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    thing <span class="op">=</span> _sigmoid(_einsum(ptrn, thing, thing_w))</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>x.backward()</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>thing.backward()</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> w, thing_w <span class="kw">in</span> <span class="bu">zip</span>(torch_weights, thing_weights):</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(np.allclose(w.grad.detach().numpy(), thing_w.grad))</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="co"># prints all true</span></span></code></pre></div>
+<p>Alright thats about it. We can now backpropogate through einsum
+operations without needing the whole jacobian. This is a lot quicker,
+and can handle real network architectures without crashing my PC.</p>
+</body>
+</html>

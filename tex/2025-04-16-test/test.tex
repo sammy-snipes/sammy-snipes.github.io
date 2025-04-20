@@ -1,0 +1,43 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{dirtytalk}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{minted}
+\usepackage{pythonhighlight}
+\usepackage[margin=72pt]{geometry}
+\setlength{\parindent}{0pt}
+\usemintedstyle[python]{monokai}
+\definecolor{puccin}{HTML}{24273a}
+\definecolor{bgrd}{HTML}{858585}
+\pagecolor{bgrd}
+
+\documentclass{article}
+\title{Test LaTeX Article}
+\author{Your Name}
+\date{April 16, 2025}
+\begin{document}
+\maketitle
+
+\section{Introduction}
+This is a test article written in raw \LaTeX{} for a GitHub Pages blog.
+Compile to HTML with \texttt{htlatex} and view in Zathura with \texttt{<leader>cv}.
+
+\section{Equation}
+The energy-mass equivalence is:
+\begin{equation}
+E = mc^2
+\end{equation}
+Inline: The quadratic formula is \( x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a} \).
+
+\section{Code}
+\begin{lstlisting}[language=Python]
+print("Hello, Jekyll!")
+\end{lstlisting}
+
+\section{Conclusion}
+Use \texttt{<leader>ct} to navigate sections in NvChad.
+
+\end{document}

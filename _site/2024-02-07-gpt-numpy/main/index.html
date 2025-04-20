@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2024-02-07-gpt-numpy</title>
+  <!-- <link rel="stylesheet" href="/assets/css/style.css"> -->
+  <link rel="stylesheet" href="/assets/katex/katex/katex.min.css">
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <script src="/assets/katex/katex/katex.min.js"></script>
+  <script src="/assets/katex/katex/contrib/auto-render.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      renderMathInElement(document.body, {
+        delimiters: [
+          {left: "$$", right: "$$", display: true},
+          {left: "\\[", right: "\\]", display: true},
+          {left: "$", right: "$", display: false},
+          {left: "\\(", right: "\\)", display: false}
+        ]
+      });
+    });
+  </script>
+
+
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/">Home</a>
+    <a href="/posts/">Posts</a>
+    <a href="/about/">About</a>
+  </nav>
+  <div class="container">
+  <header class="post-header">
+    <!-- <h1 class="post-title">2024-02-07-gpt-numpy</h1> -->
+    <div class="post-meta">
+      <time datetime="2024-02-07T00:00:00-05:00">
+        February 7, 2024
+      </time>
+      <!--  -->
+      <!-- <span class="post-categories"> -->
+      <!--    -->
+      <!--     <span class="category">latex</span> -->
+      <!--    -->
+      <!-- </span> -->
+      <!--  -->
+    </div>
+  </header>
+
+  <article class="post-content">
+    <html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>GPT2 in Numpy</title>
+  
+  <script defer="" src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">GPT2 in Numpy</h1>
+</header>
+<h1 id="introduction">Introduction</h1>
+<p>I thought it might be fun to write chat GPT in numpy. The plan is to
+slowly build out an autograd engine until we end up with GPT2. The repo
+for this project is <a href="https://github.com/sammy-snipes/numpy-GPT2">here</a>.</p>
+<figure id="fig:">
+<div class="center">
+<img src="/assets/img/test.jpg" style="width:80.0%" />
+</div>
+<figcaption>GPT2 architecture</figcaption>
+</figure>
+<p>First I implemented it in pytorch so I could see exactly what I
+needed. That implementation is <a href="https://github.com/sammy-snipes/numpy-GPT2/blob/main/numpyGPT/pytorch_reference.py">here</a>.
+I more or less copied Andrej Kaparhty’s implementation from his <a href="https://github.com/karpathy/ng-video-lecture">video</a> on it ,
+except I stuck the multihead attention in a single module using
+<code>einsum</code>.</p>
+<p>The way I want to set up the autograd engine is to have a
+<code>engine.py</code> file that contains a class called
+<code>Parameter</code> which holds data, grad, shape,..etc, and
+implements some dunders like <code>__add__</code>, <code>__mul__</code>
+while tracking gradient. Then well have a <code>functions.py</code> file
+that has <code>Parameter</code> implementations for
+<code>softmax</code>, <code>gelu</code>, <code>layernorm</code>.
+Finally, there will be a <code>models.py</code> file that has class
+wrappers to make it all feel like pytorch along with the GPT
+implementation.</p>
+<p>To figure out what class methods we need in <code>Parameter</code>
+lets start by listing the functions we want, and how those require
+<code>Parameter</code> to behave. e.g. <code>nn.LayerNorm</code>
+calculation uses mean and variance, so to implement that,
+<code>Parameter</code> needs some kind of <code>mean</code> method.</p>
+<ol>
+<li><p><code>nn.Embedding</code>. This is just a lookup table; nothing
+special required.</p></li>
+<li><p><code>einsum</code>. This is explicitly used in the
+mutlihead-attention. <code>nn.Linear</code> is just an einsum along the
+last two dimensions of the input, so we get that for free by
+implementing <code>einsum</code>.</p></li>
+<li><p><code>nn.GELU</code>. Nothing special required.</p></li>
+<li><p><code>nn.Dropout</code>. Nothing special required.</p></li>
+<li><p><code>einops.rearrange</code>. This is easy to implement and
+read, nothing special required.</p></li>
+<li><p><code>nn.Softmax</code>. Nothing special required.</p></li>
+<li><p><code>nn.CrossEntropyLoss</code>. Let <span class="math inline">Y</span> be the target, and our prediction <span class="math inline">\hat{Y} = \text{model}(X)</span>, then CE loss is
+given by <span class="math display">CE(Y, \hat{Y}) =
+-\frac{1}{N}\sum_{n, c}Y \odot \log \bigg(\text{softmax}
+\big(\hat{Y}\big) \bigg)</span> The haddamard product and sum can be
+handled by one einsum pattern <code>ij,ij-&gt;</code>, and we already
+have softmax above, so thats missing is <code>torch.log</code> which we
+can write a function for, and scalar multiplication which we can handle
+with the <code>__rmul__</code> dunder.</p></li>
+<li><p><code>nn.LayerNorm</code>. The equation is <span class="math display">ln = \frac{x - \text{E}[x]}{\sqrt{\text{Var}[x] +
+\epsilon}} * \gamma + \beta</span> where <span class="math inline">\gamma, \beta</span> are the same shape as the
+dimensions being normalized. This will require a <code>.mean()</code>
+method. We can get variance with <span class="math display">\text{var} =
+\text{E}[x^2] - \text{E}[x]^2</span> For all this we need the following
+dunders: <code>__pow__</code>, <code>__mul__</code>,
+<code>__add__</code>, <code>__sub__</code>. Instead of implemting
+<code>__div__</code> ill use negative exponents and multiplication so
+itll look like</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>    ln <span class="op">=</span> (x <span class="op">-</span> x.mean()) <span class="op">*</span> ((x<span class="op">**</span><span class="dv">2</span>).mean() <span class="op">-</span> (x.mean())<span class="op">**</span><span class="dv">2</span> <span class="op">+</span> eps) <span class="op">**</span> <span class="op">-</span><span class="fl">0.5</span> ...stuff...</span></code></pre></div></li>
+</ol>
+<p>That covers it for functions. For class methods theres two things we
+need that have yet to crop up. Both are in the attention implementation.
+Here is the forward method, in torch.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># torch # </span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MultiHeadSelfAttention(nn.Module):</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, embed_dim, num_heads) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.embed_dim <span class="op">=</span> embed_dim</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.num_heads <span class="op">=</span> num_heads</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.head_dim <span class="op">=</span> <span class="bu">int</span>(embed_dim <span class="op">/</span> num_heads)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.in_proj <span class="op">=</span> nn.Linear(embed_dim, <span class="dv">3</span> <span class="op">*</span> embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.out_proj <span class="op">=</span> nn.Linear(<span class="va">self</span>.head_dim <span class="op">*</span> num_heads, embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x):</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>        B, T, C <span class="op">=</span> x.shape</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>        qvk <span class="op">=</span> <span class="va">self</span>.in_proj(x)</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>        q, v, k <span class="op">=</span> <span class="bu">tuple</span>(</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>            rearrange(qvk, <span class="st">&quot;b t (d k h) -&gt; k b h t d&quot;</span>, k<span class="op">=</span><span class="dv">3</span>, h<span class="op">=</span><span class="va">self</span>.num_heads)</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>        scaled_prod <span class="op">=</span> einsum(<span class="st">&quot;bhid,bhjd-&gt;bhij&quot;</span>, q, k) <span class="op">*</span> (<span class="va">self</span>.head_dim) <span class="op">**</span> <span class="op">-</span><span class="fl">0.5</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>        mask <span class="op">=</span> torch.tril(torch.ones_like(scaled_prod))</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>        scaled_prod <span class="op">=</span> scaled_prod.masked_fill(mask <span class="op">==</span> <span class="dv">0</span>, <span class="op">-</span><span class="bu">float</span>(<span class="st">&quot;inf&quot;</span>))</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>        attention <span class="op">=</span> torch.softmax(scaled_prod, dim<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> einsum(<span class="st">&quot;bhij,bhjd-&gt;bhid&quot;</span>, attention, v)</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> rearrange(out, <span class="st">&quot;b h t d -&gt; b t (h d)&quot;</span>)</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.out_proj(out)</span></code></pre></div>
+<p>First we need a way to unpack a <code>Parameter</code> along an axis,
+and second we need masking support. All together the class methods we
+need are:</p>
+<ol>
+<li><p><code>__add__</code></p></li>
+<li><p><code>__sub__</code></p></li>
+<li><p><code>__mul__</code></p></li>
+<li><p><code>__pow__</code></p></li>
+<li><p><code>__rmul__</code></p></li>
+<li><p><code>mean()</code></p></li>
+<li><p><code>split()</code></p></li>
+<li><p><code>masked_fill()</code></p></li>
+</ol>
+<p>and then some utility stuff</p>
+<ol>
+<li><p><code>backward()</code>, something to trigger
+backpropogation</p></li>
+<li><p><code>sum()</code>, nice to have</p></li>
+<li><p><code>broadcast_helper</code>, broadcasting introduces some
+complications to backprop. Since addition, subtraction and
+multiplication all broadcast, we are going to make a seperate method get
+gradients for broadcasted operations.</p></li>
+</ol>
+<p>Cool, we have our grocery list of methods and functions so lets get
+down to business</p>
+<h1 id="the-class">The class</h1>
+<p>The <code>backward()</code> method is going to dictate a lot of what
+we do here so lets settle that first. I liked the way Andrej Kaparthy
+laid it out in his micrograd <a href="https://www.youtube.com/watch?v=VMj-3S1tku0">video</a>. Every
+<code>Parameter</code> will have a lambda function
+<code>_backward</code> that dictates how its gradient interacts with its
+children during backpropogation, and calling the class method
+<code>backward()</code> will call the <code>_backward</code> function of
+everything in the computational graph. For an example of how this should
+work</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>a, b <span class="op">=</span> Parameter(<span class="dv">2</span>), Parameter(<span class="dv">3</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>c <span class="op">=</span> a <span class="op">+</span> b</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>d <span class="op">=</span> c <span class="op">**</span> <span class="dv">2</span> <span class="op">-</span> c</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> d_backward():</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  c.grad <span class="op">+=</span> <span class="dv">2</span> <span class="op">*</span> c <span class="op">-</span> <span class="dv">1</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> c_backward():</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  a.grad <span class="op">+=</span> c.grad</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  b.grad <span class="op">+=</span> c.grad</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>d._backward <span class="op">=</span> d_backward</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>c._backward <span class="op">=</span> c_backward</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>d.backward()</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a.grad, b.grad) <span class="co"># 9, 9, theoretically...</span></span></code></pre></div>
+<p>with that were ready to start</p>
+<h2 id="init-and-backward">init and backward</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> List, Tuple</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Parameter:</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, data, _children<span class="op">=</span>()) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.data <span class="op">=</span> <span class="op">=</span> data</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.grad <span class="op">=</span> np.zeros_like(<span class="va">self</span>.data)</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>._children <span class="op">=</span> _children</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.shape <span class="op">=</span> <span class="va">self</span>.data.shape</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dim <span class="op">=</span> <span class="bu">len</span>(<span class="va">self</span>.shape) <span class="cf">if</span> <span class="va">self</span>.shape <span class="cf">else</span> <span class="dv">0</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>._backward <span class="op">=</span> <span class="kw">lambda</span>: <span class="va">None</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>):</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="va">self</span>.grad.shape <span class="op">==</span> ()</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.grad <span class="op">=</span> <span class="fl">1.0</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>        visited, stack <span class="op">=</span> <span class="bu">set</span>(), []</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> dfs(node):</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>            visited.add(node)</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> child <span class="kw">in</span> node._children:</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> child <span class="kw">not</span> <span class="kw">in</span> visited:</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>                    dfs(child)</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>            stack.append(node)</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>        dfs(<span class="va">self</span>)</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> node <span class="kw">in</span> stack[::<span class="op">-</span><span class="dv">1</span>]:</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>            node._backward()</span></code></pre></div>
+<p>For backward we first assert that its a scalar, and then call the
+<code>_backward</code> method of everything in the reverse order of the
+computational graph.</p>
+<h2 id="split">split</h2>
+<p>We want to be able to split a <code>Parameter</code>, do stuff to the
+children, and have the gradient backpropogate correctly.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> split(<span class="va">self</span>, dim<span class="op">=</span><span class="dv">0</span>) <span class="op">-&gt;</span> List[<span class="st">&quot;Parameter&quot;</span>]:</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>        data <span class="op">=</span> np.moveaxis(<span class="va">self</span>.data, dim, <span class="dv">0</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>        kids <span class="op">=</span> []</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> idx, <span class="bu">slice</span> <span class="kw">in</span> <span class="bu">enumerate</span>(data):</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>            kid <span class="op">=</span> Parameter(<span class="bu">slice</span>, _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>            <span class="kw">def</span> _undo_split(idx<span class="op">=</span>idx, kid<span class="op">=</span>kid):</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>                np.moveaxis(<span class="va">self</span>.grad, dim, <span class="dv">0</span>)[idx] <span class="op">+=</span> kid.grad</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>            kid._backward <span class="op">=</span> _undo_split</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>            kids.append(kid)</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> kids</span></code></pre></div>
+<p>Using <code>np.moveaxis</code> to bring the split axis to the zero
+dimension, we split the <code>Parameter</code> into children. To
+backpropogate we use <code>np.moveaxis</code> with the reverse operands
+to return a view, and then just add the child grad.</p>
+<h2 id="masked-fill">masked fill</h2>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> masked_fill(<span class="va">self</span>, mask: np.ndarray, value: <span class="bu">float</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>        out_data <span class="op">=</span> np.copy(<span class="va">self</span>.data)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>        out_data[mask] <span class="op">=</span> value</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(out_data, _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>            masked_grad <span class="op">=</span> np.copy(out.grad)</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>            masked_grad[mask] <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> masked_grad</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<p>For this, any value that gets masked has a zero gradient. For mask
+you would pass a boolean array like <code>x == 0</code></p>
+<h2 id="sum">sum</h2>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="bu">sum</span>(<span class="va">self</span>, dim<span class="op">=</span><span class="va">None</span>, keepdim<span class="op">=</span><span class="va">False</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(<span class="va">self</span>.data.<span class="bu">sum</span>(axis<span class="op">=</span>dim, keepdims<span class="op">=</span>keepdim), _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> (</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>                np.expand_dims(out.grad, dim)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> (dim <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="kw">and</span> <span class="kw">not</span> keepdim)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>                <span class="cf">else</span> out.grad</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<p>When <code>keepdim == True</code> dims are summed to be 1, so there
+are no broadcasting issues. If its false, suppose
+<code>a.shape = [2, 3, 4]</code>, and <code>c = a.sum(-1, 1)</code>,
+then backward pass will have <code>a.grad += c.grad</code>, which bricks
+since adding shapes <code>[2, 3, 4] += [3]</code> isnt valid. The
+solution is expand collapsed dims to 1.</p>
+<h2 id="mean">mean</h2>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> mean(<span class="va">self</span>, dim: Tuple[<span class="bu">int</span>], keepdim<span class="op">=</span><span class="va">True</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>        m <span class="op">=</span> np.mean(<span class="va">self</span>.data, dim, keepdims<span class="op">=</span>keepdim)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(m, _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>            original_shape <span class="op">=</span> [<span class="bu">int</span>(_) <span class="cf">for</span> _ <span class="kw">in</span> <span class="va">self</span>.data.shape]</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>            new_shape <span class="op">=</span> [original_shape[d] <span class="cf">for</span> d <span class="kw">in</span> dim]</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>            out_grad <span class="op">=</span> out.grad <span class="cf">if</span> keepdim <span class="cf">else</span> np.expand_dims(out.grad, dim)</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> out_grad <span class="op">/</span> np.prod(new_shape)</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<p>The grad for mean is just <span class="math display">\frac{\partial}{\partial X}
+\big[\frac{1}{N}\sum{X}\big]= \frac{1}{N}</span> and we use the same
+reshaping we used for <code>sum</code></p>
+<h2 id="dunder">dunder</h2>
+<p>Lets first solve the broadcasting issue. Lets say somewhere in our
+network we have <code>a, b</code> of shapes
+<code>[2, 3, 4], [2, 3]</code>, and <code>c = a + b</code>. The backward
+pass will require</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>  a.grad <span class="op">+=</span> c.grad</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  b.grad <span class="op">+=</span> c.grad</span></code></pre></div>
+<p>but line 2 fails since <code>[2, 3, 4]</code> cant be broadcast into
+<code>[2, 3]</code>. So what is the grad supposed to be? When
+<code>a, b</code> get added, the broadcasting adds <code>b</code> to
+each array along the 0’th dimension of <code>a</code>. So the gradient
+w.r.t <code>a</code> is <code>c.grad</code> summed along the 0’th
+dimension. In general, to get the grad w.r.t. the broadcasted operand
+you just sum the grad from the left until it has the same shape as the
+operand.</p>
+<p>Theres one more case to handle. If we had <code>a, b</code> of shapes
+<code>[2, 3, 4], [2, 1, 4]</code>, we’ll throw a broadcasting error in
+the backward pass since <code>[2, 3, 4]</code> can be broadcast into
+<code>[2, 1, 4]</code> The solution is sum <code>c.grad</code> to 1
+along the 1’th dimension. <code>[2, 3, 4] -&gt; [2, 1, 4]</code>. In
+general, the grad has to be summed to 1 in whichever dims the
+broadcasted operand has dimension length 1.</p>
+<p>combinging both these cases</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>    <span class="at">@staticmethod</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> broadcast_helper(grad: np.ndarray, a: np.ndarray) <span class="op">-&gt;</span> np.ndarray:</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> grad.shape <span class="op">==</span> a.shape:</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> grad</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>            sum_dims <span class="op">=</span> <span class="bu">tuple</span>(<span class="bu">range</span>(<span class="bu">len</span>(grad.shape) <span class="op">-</span> <span class="bu">len</span>(a.shape)))</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>            sum_to_one <span class="op">=</span> <span class="bu">tuple</span>(_ <span class="cf">for</span> _, __ <span class="kw">in</span> <span class="bu">enumerate</span>(a.shape) <span class="cf">if</span> __ <span class="op">==</span> <span class="dv">1</span>)</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> grad.<span class="bu">sum</span>(sum_dims).<span class="bu">sum</span>(sum_to_one, keepdims<span class="op">=</span><span class="va">True</span>)</span></code></pre></div>
+<p>First we sum from the left until <code>grad</code> and <code>a</code>
+have the same number of dimensions, then whichever dims have length 1 in
+<code>a</code> get summed to 1 in <code>grad</code>. With this out of
+the way we can write our dunders. These are all straight forward so ill
+show addition and multiplication. <code>__pow__</code> doesnt have any
+broadcasting and the implementation is exactly what you expect.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__add__</span>(<span class="va">self</span>, other) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>        other <span class="op">=</span> other <span class="cf">if</span> <span class="bu">isinstance</span>(other, Parameter) <span class="cf">else</span> Parameter(other)</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(<span class="va">self</span>.data <span class="op">+</span> other.data, _children<span class="op">=</span>(<span class="va">self</span>, other))</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad, <span class="va">self</span>.grad)</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>            other.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad, other.grad)</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__mul__</span>(<span class="va">self</span>, other: <span class="st">&quot;Parameter&quot;</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(<span class="va">self</span>.data <span class="op">*</span> other.data, _children<span class="op">=</span>(<span class="va">self</span>, other))</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad <span class="op">*</span> other.data, <span class="va">self</span>.grad)</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>            other.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad <span class="op">*</span> <span class="va">self</span>.data, other.grad)</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<h1 id="functions">Functions</h1>
+<p>I said this was going to be in numpy but I guess I lied.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> einops <span class="im">import</span> repeat</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> einops <span class="im">import</span> rearrange <span class="im">as</span> erearrange</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> string</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> .engine <span class="im">import</span> Parameter</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> scipy.stats <span class="im">import</span> norm</span></code></pre></div>
+<p>SciPy is for <code>GELU</code>, and the einops stuff is because I’m
+going to implement a rearrange function for <code>Parameter</code> that
+just calls the einops version lol. We’ve built out far enough that a lot
+of the function implementations are straightforward.</p>
+<h2 id="einsum">einsum</h2>
+<p>I have a more detailed post about how this is calculated <a href="https://sammy-snipes.github.io/einsum-gradient/">here</a>, but
+heres the final code</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> einsum(ptrn: <span class="bu">str</span>, <span class="op">*</span>args: Parameter) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Parameter(np.einsum(ptrn, <span class="op">*</span>[_.data <span class="cf">for</span> _ <span class="kw">in</span> args]), _children<span class="op">=</span><span class="bu">tuple</span>(args))</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>        in_ptrn, out_ptrn <span class="op">=</span> ptrn.split(<span class="st">&quot;-&gt;&quot;</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>        in_ptrns <span class="op">=</span> in_ptrn.split(<span class="st">&quot;,&quot;</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="kw">not</span> out_ptrn:</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>            out_ptrn <span class="op">=</span> <span class="st">&quot;&quot;</span>.join(<span class="bu">list</span>(<span class="bu">set</span>(string.ascii_lowercase) <span class="op">-</span> <span class="bu">set</span>(in_ptrn))[<span class="dv">0</span>])</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>            temp_out_grad <span class="op">=</span> np.expand_dims(out.grad, <span class="dv">0</span>)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>            temp_out_grad <span class="op">=</span> out.grad</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> calc_grad(idx):</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>            op_ptrn, op <span class="op">=</span> in_ptrns[idx], args[idx]</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>            other_op_ptrns <span class="op">=</span> in_ptrns[:idx] <span class="op">+</span> in_ptrns[idx <span class="op">+</span> <span class="dv">1</span> :]</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>            known_dims <span class="op">=</span> <span class="st">&quot;&quot;</span>.join(</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>                [c <span class="cf">for</span> c <span class="kw">in</span> op_ptrn <span class="cf">if</span> c <span class="kw">in</span> <span class="st">&quot;&quot;</span>.join(other_op_ptrns) <span class="op">+</span> out_ptrn]</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>            grad_string <span class="op">=</span> <span class="ss">f&quot;</span><span class="sc">{</span>out_ptrn<span class="sc">}</span><span class="ss">,</span><span class="sc">{</span><span class="st">&#39;,&#39;</span><span class="sc">.</span>join(other_op_ptrns)<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>known_dims<span class="sc">}</span><span class="ss">&quot;</span></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="kw">not</span> other_op_ptrns:</span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>                grad_string <span class="op">=</span> grad_string.replace(<span class="st">&quot;,&quot;</span>, <span class="st">&quot;&quot;</span>)</span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>            grad <span class="op">=</span> np.einsum(</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>                grad_string, temp_out_grad, <span class="op">*</span>[_.data <span class="cf">for</span> _ <span class="kw">in</span> args <span class="cf">if</span> _ <span class="op">!=</span> op]</span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> known_dims <span class="op">!=</span> op_ptrn:</span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>                expand_dims <span class="op">=</span> <span class="bu">tuple</span>(</span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a>                    _ <span class="cf">for</span> _, __ <span class="kw">in</span> <span class="bu">enumerate</span>(op_ptrn) <span class="cf">if</span> __ <span class="kw">not</span> <span class="kw">in</span> known_dims</span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a>                )</span>
+<span id="cb13-29"><a href="#cb13-29" aria-hidden="true" tabindex="-1"></a>                grad <span class="op">=</span> np.expand_dims(grad, expand_dims)</span>
+<span id="cb13-30"><a href="#cb13-30" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> grad</span>
+<span id="cb13-31"><a href="#cb13-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-32"><a href="#cb13-32" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> idx, arg <span class="kw">in</span> <span class="bu">enumerate</span>(args):</span>
+<span id="cb13-33"><a href="#cb13-33" aria-hidden="true" tabindex="-1"></a>            arg.grad <span class="op">+=</span> calc_grad(idx)</span>
+<span id="cb13-34"><a href="#cb13-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-35"><a href="#cb13-35" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb13-36"><a href="#cb13-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span></code></pre></div>
+<p>For an einsum pattern like <code>ij,jk-&gt;ik</code>, the grad w.r.t.
+operand 0 is <code>ik,jk-&gt;ij</code>. Problems arise if you sum to a
+scalar. E.g. <code>ij,jk-&gt;</code> would reverse to
+<code>,jk-ij</code>.</p>
+<p>This bricks becasue operand zero needs a string, and the
+<code>i</code> in the output string is unknown. The first problem we
+solve by making grad 1d if its scalar, and assigning it a unique letter.
+We solve the second issue by making the out string of our reversed
+einsum only the known dimensions. i.e. the dimensions of the operand
+contained in the other operands or output. So the grad string of
+<code>ij,jk-&gt;</code> would be <code>q,jk-&gt;j</code>, where
+<code>q</code> is an arbitrary letter. This is of course the wrong shape
+but we solve by expanding to 1 along the missing dimensions, and then
+the gradient broadcasts with no issues.</p>
+<p>This works for any number of arguments, im pretty sure.</p>
+<p>At this point we are basically done, really. We have core operations
+in our <code>Parameter</code> class methods and we just added support
+for arbitrary einsum operations. From here on out we dont even need to
+think. Softmax is just</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> exp(x: Parameter) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Parameter(np.exp(x.data), _children<span class="op">=</span>(x,))</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>        x.grad <span class="op">+=</span> out.data <span class="op">*</span> out.grad</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> softmax(x: Parameter, dim<span class="op">=-</span><span class="dv">1</span>) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>    e <span class="op">=</span> exp(x)</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> e <span class="op">*</span> (e.<span class="bu">sum</span>(dim, keepdim<span class="op">=</span><span class="va">True</span>) <span class="op">**</span> <span class="op">-</span><span class="dv">1</span>)</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span></code></pre></div>
+<p>and cross entropy is just</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> log(x: Parameter) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Parameter(np.log(x.data), _children<span class="op">=</span>(x,))</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>        x.grad <span class="op">+=</span> out.grad <span class="op">*</span> (<span class="dv">1</span> <span class="op">/</span> x.data)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cross_entropy_loss(x: Parameter, y: Parameter, dim<span class="op">=-</span><span class="dv">1</span>) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">any</span>([_.data.dtype <span class="op">!=</span> np.float64 <span class="cf">for</span> _ <span class="kw">in</span> (x, y)]):</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">TypeError</span>(<span class="st">&quot;cross entropy takes float64&quot;</span>)</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>    log_soft <span class="op">=</span> log(softmax(x, dim<span class="op">=</span>dim))</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>    ptrn <span class="op">=</span> string.ascii_lowercase[: <span class="bu">len</span>(x.data.shape)]</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="bu">float</span>(<span class="op">-</span>x.data.shape[<span class="dv">0</span>]) <span class="op">**</span> <span class="op">-</span><span class="dv">1</span>) <span class="op">*</span> einsum(<span class="ss">f&quot;</span><span class="sc">{</span>ptrn<span class="sc">}</span><span class="ss">,</span><span class="sc">{</span>ptrn<span class="sc">}</span><span class="ss">-&gt;&quot;</span>, log_soft, y)</span></code></pre></div>
+<p>I’m going to leave out the rest of the functions, since the
+implementation is exactly what you expect.</p>
+<h1 id="gpt">GPT</h1>
+<p>At this point I wrote a bunch of code to make class wrappers for our
+functions so they feel more like pytorch. For example heres the
+embedding</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Embedding(Module):</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, num_embeddings, embedding_dim) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.weight <span class="op">=</span> Parameter(shape<span class="op">=</span>(num_embeddings, embedding_dim))</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: torch.nn.Module) <span class="op">-&gt;</span> <span class="st">&quot;Module&quot;</span>:</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [(<span class="st">&quot;weight&quot;</span>, <span class="va">self</span>._weight_to_param)]</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x: Parameter):</span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> embed(x.data, <span class="va">self</span>.weight)</span></code></pre></div>
+<p>The <code>_from_torch</code> method allows me to initialize an
+<code>Embedding</code> object from a <code>nn.Embedding</code> by
+copying+detaching its weight, converting it to a <code>Parameter</code>,
+and assigning it to the object. The <code>_weight_to_param</code> does
+what the name implies, and theres another method
+<code>_do_nothing</code> used for assigning non-learnable attributes
+like softmax dim, layer norm shape, ...etc. Finally in theres a global
+function <code>convert_nn_module</code> that converts
+<code>nn.Module</code>’s to their <code>Parameter</code> based
+equivalent by checking a dictionary.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch.nn <span class="im">as</span> nn</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>CONVERSION_DICT <span class="op">=</span> {</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>    nn.Linear: Linear,</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>    nn.Softmax: Softmax,</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>    nn.CrossEntropyLoss: CrossEntropyLoss,</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>    nn.ReLU: ReLU,</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>    nn.GELU: GELU,</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>    nn.Embedding: Embedding,</span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>    nn.Dropout: Dropout,</span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>    nn.LayerNorm: LayerNorm,</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>    nn.Sequential: Sequential,</span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>    r.MultiHeadSelfAttention: MultiheadAttention,</span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>    r.Block: Block,</span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> convert_nn_module(x: nn.Module):</span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> CONVERSION_DICT[<span class="bu">type</span>(x)]._from_torch(x)</span></code></pre></div>
+<p>The final GPT implementation looks alot like the original pytorch
+implementation.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MultiheadAttention(Module):</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, embed_dim, num_heads) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.embed_dim <span class="op">=</span> embed_dim</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.num_heads <span class="op">=</span> num_heads</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.head_dim <span class="op">=</span> <span class="bu">int</span>(embed_dim <span class="op">/</span> num_heads)</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.in_proj <span class="op">=</span> Linear(embed_dim, <span class="dv">3</span> <span class="op">*</span> embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.out_proj <span class="op">=</span> Linear(embed_dim, embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: nn.Module):</span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [</span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;in_proj&quot;</span>, convert_nn_module),</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;out_proj&quot;</span>, convert_nn_module),</span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;embed_dim&quot;</span>, <span class="va">self</span>._do_nothing),</span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;num_heads&quot;</span>, <span class="va">self</span>._do_nothing),</span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;head_dim&quot;</span>, <span class="va">self</span>._do_nothing),</span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x: Parameter):</span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>        qvk <span class="op">=</span> <span class="va">self</span>.in_proj(x)</span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a>        qvk <span class="op">=</span> rearrange(qvk, <span class="st">&quot;b t (d k h) -&gt; k b h t d&quot;</span>, k<span class="op">=</span><span class="dv">3</span>, h<span class="op">=</span><span class="va">self</span>.num_heads)</span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a>        q, v, k <span class="op">=</span> qvk.split(<span class="dv">0</span>)</span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a>        scaled_product <span class="op">=</span> (<span class="va">self</span>.head_dim<span class="op">**-</span><span class="fl">0.5</span>) <span class="op">*</span> einsum(<span class="st">&quot;bhid,bhjd-&gt;bhij&quot;</span>, q, k)</span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>        mask <span class="op">=</span> np.tril(np.ones_like(scaled_product.data))</span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a>        scaled_product <span class="op">=</span> scaled_product.masked_fill(mask <span class="op">==</span> <span class="dv">0</span>, <span class="op">-</span>np.inf)</span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a>        attention <span class="op">=</span> softmax(scaled_product, dim<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> einsum(<span class="st">&quot;bhij,bhjd-&gt;bhid&quot;</span>, attention, v)</span>
+<span id="cb18-33"><a href="#cb18-33" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> rearrange(out, <span class="st">&quot;b h t d -&gt; b t (h d)&quot;</span>, h<span class="op">=</span><span class="va">self</span>.num_heads, d<span class="op">=</span><span class="va">self</span>.head_dim)</span>
+<span id="cb18-34"><a href="#cb18-34" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.out_proj(out)</span>
+<span id="cb18-35"><a href="#cb18-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-36"><a href="#cb18-36" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> parameters(<span class="va">self</span>):</span>
+<span id="cb18-37"><a href="#cb18-37" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.in_proj.parameters() <span class="op">+</span> <span class="va">self</span>.out_proj.parameters()</span>
+<span id="cb18-38"><a href="#cb18-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-39"><a href="#cb18-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-40"><a href="#cb18-40" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Block(Module):</span>
+<span id="cb18-41"><a href="#cb18-41" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, embed_dim, num_heads, p<span class="op">=</span><span class="fl">0.0</span>):</span>
+<span id="cb18-42"><a href="#cb18-42" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb18-43"><a href="#cb18-43" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.ln1, <span class="va">self</span>.ln2 <span class="op">=</span> [</span>
+<span id="cb18-44"><a href="#cb18-44" aria-hidden="true" tabindex="-1"></a>            LayerNorm(normalized_shape<span class="op">=</span>(embed_dim,)) <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">2</span>)</span>
+<span id="cb18-45"><a href="#cb18-45" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-46"><a href="#cb18-46" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.attn <span class="op">=</span> MultiheadAttention(embed_dim, num_heads)</span>
+<span id="cb18-47"><a href="#cb18-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-48"><a href="#cb18-48" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.mlp <span class="op">=</span> Sequential(</span>
+<span id="cb18-49"><a href="#cb18-49" aria-hidden="true" tabindex="-1"></a>            Linear(embed_dim, embed_dim <span class="op">*</span> <span class="dv">4</span>),</span>
+<span id="cb18-50"><a href="#cb18-50" aria-hidden="true" tabindex="-1"></a>            GELU(),</span>
+<span id="cb18-51"><a href="#cb18-51" aria-hidden="true" tabindex="-1"></a>            Linear(embed_dim <span class="op">*</span> <span class="dv">4</span>, embed_dim),</span>
+<span id="cb18-52"><a href="#cb18-52" aria-hidden="true" tabindex="-1"></a>            Dropout(p),</span>
+<span id="cb18-53"><a href="#cb18-53" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb18-54"><a href="#cb18-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-55"><a href="#cb18-55" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x):</span>
+<span id="cb18-56"><a href="#cb18-56" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> x <span class="op">+</span> <span class="va">self</span>.attn(<span class="va">self</span>.ln1(x))</span>
+<span id="cb18-57"><a href="#cb18-57" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> x <span class="op">+</span> <span class="va">self</span>.mlp(<span class="va">self</span>.ln2(x))</span>
+<span id="cb18-58"><a href="#cb18-58" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> x</span>
+<span id="cb18-59"><a href="#cb18-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-60"><a href="#cb18-60" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb18-61"><a href="#cb18-61" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: nn.Module):</span>
+<span id="cb18-62"><a href="#cb18-62" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb18-63"><a href="#cb18-63" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [</span>
+<span id="cb18-64"><a href="#cb18-64" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;ln1&quot;</span>, convert_nn_module),</span>
+<span id="cb18-65"><a href="#cb18-65" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;ln2&quot;</span>, convert_nn_module),</span>
+<span id="cb18-66"><a href="#cb18-66" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;attn&quot;</span>, convert_nn_module),</span>
+<span id="cb18-67"><a href="#cb18-67" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;mlp&quot;</span>, convert_nn_module),</span>
+<span id="cb18-68"><a href="#cb18-68" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-69"><a href="#cb18-69" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span>
+<span id="cb18-70"><a href="#cb18-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-71"><a href="#cb18-71" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> parameters(<span class="va">self</span>):</span>
+<span id="cb18-72"><a href="#cb18-72" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> (</span>
+<span id="cb18-73"><a href="#cb18-73" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.ln1.parameters()</span>
+<span id="cb18-74"><a href="#cb18-74" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="va">self</span>.ln2.parameters()</span>
+<span id="cb18-75"><a href="#cb18-75" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="va">self</span>.attn.parameters()</span>
+<span id="cb18-76"><a href="#cb18-76" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="va">self</span>.mlp.parameters()</span>
+<span id="cb18-77"><a href="#cb18-77" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb18-78"><a href="#cb18-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-79"><a href="#cb18-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-80"><a href="#cb18-80" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> GPT(Module):</span>
+<span id="cb18-81"><a href="#cb18-81" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, vocab_size, embed_dim, num_heads, seq_length, n_blocks) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb18-82"><a href="#cb18-82" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb18-83"><a href="#cb18-83" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.token_embedding <span class="op">=</span> Embedding(vocab_size, embed_dim)</span>
+<span id="cb18-84"><a href="#cb18-84" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.position_embedding <span class="op">=</span> Embedding(seq_length, embed_dim)</span>
+<span id="cb18-85"><a href="#cb18-85" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.blocks <span class="op">=</span> Sequential(</span>
+<span id="cb18-86"><a href="#cb18-86" aria-hidden="true" tabindex="-1"></a>            <span class="op">*</span>[Block(embed_dim, num_heads) <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(n_blocks)]</span>
+<span id="cb18-87"><a href="#cb18-87" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb18-88"><a href="#cb18-88" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.ln_f <span class="op">=</span> LayerNorm((embed_dim,))</span>
+<span id="cb18-89"><a href="#cb18-89" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.lm_head <span class="op">=</span> Linear(embed_dim, vocab_size)</span>
+<span id="cb18-90"><a href="#cb18-90" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-91"><a href="#cb18-91" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, idx: Parameter):</span>
+<span id="cb18-92"><a href="#cb18-92" aria-hidden="true" tabindex="-1"></a>        B, T <span class="op">=</span> idx.shape</span>
+<span id="cb18-93"><a href="#cb18-93" aria-hidden="true" tabindex="-1"></a>        tok_emb <span class="op">=</span> <span class="va">self</span>.token_embedding(idx)</span>
+<span id="cb18-94"><a href="#cb18-94" aria-hidden="true" tabindex="-1"></a>        pos_emb <span class="op">=</span> <span class="va">self</span>.position_embedding(Parameter(np.arange(T)))</span>
+<span id="cb18-95"><a href="#cb18-95" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> tok_emb <span class="op">+</span> pos_emb</span>
+<span id="cb18-96"><a href="#cb18-96" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> <span class="va">self</span>.blocks(x)</span>
+<span id="cb18-97"><a href="#cb18-97" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> <span class="va">self</span>.ln_f(x)</span>
+<span id="cb18-98"><a href="#cb18-98" aria-hidden="true" tabindex="-1"></a>        logits <span class="op">=</span> <span class="va">self</span>.lm_head(x)</span>
+<span id="cb18-99"><a href="#cb18-99" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> logits</span>
+<span id="cb18-100"><a href="#cb18-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-101"><a href="#cb18-101" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb18-102"><a href="#cb18-102" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: nn.Module):</span>
+<span id="cb18-103"><a href="#cb18-103" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb18-104"><a href="#cb18-104" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [</span>
+<span id="cb18-105"><a href="#cb18-105" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;token_embedding&quot;</span>, convert_nn_module),</span>
+<span id="cb18-106"><a href="#cb18-106" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;position_embedding&quot;</span>, convert_nn_module),</span>
+<span id="cb18-107"><a href="#cb18-107" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;blocks&quot;</span>, convert_nn_module),</span>
+<span id="cb18-108"><a href="#cb18-108" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;ln_f&quot;</span>, convert_nn_module),</span>
+<span id="cb18-109"><a href="#cb18-109" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;lm_head&quot;</span>, convert_nn_module),</span>
+<span id="cb18-110"><a href="#cb18-110" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-111"><a href="#cb18-111" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span></code></pre></div>
+<p>And thats it. We got GPT2 running in numpy. I tested this with no
+dropout, since I dont know how to synchronize random states between
+numpy and torch, and the otuputs/gradients are all identical. Pretty
+dope.</p>
+</body>
+</html>
+
+
+  </article>
+
+  <footer class="post-footer">
+    <div class="post-nav">
+      
+      <a class="prev" href="/2024-01-18-einsum-gradient/main/">&laquo; 2024-01-18-einsum-gradient</a>
+      
+      
+      <a class="next" href="/2025-04-16-test/test/">2025-04-16-test &raquo;</a>
+      
+    </div>
+  </footer>
+</div>
+
+<!-- --- -->
+<!-- layout: default -->
+<!-- --- -->
+<!-- <div class="container"> -->
+<!--   <header class="post-header"> -->
+<!--     <div class="post-meta"> -->
+<!--       <time datetime="2024-02-07T00:00:00-05:00"> -->
+<!--         <em>February 7, 2024</em> <!-- Italic date --> -->
+<!--       </time> -->
+<!--        -->
+<!--       <span class="post-categories"> -->
+<!--          -->
+<!--           <span class="category">latex</span> -->
+<!--          -->
+<!--       </span> -->
+<!--        -->
+<!--     </div> -->
+<!--   </header> -->
+<!---->
+<!--   <article class="post-content"> -->
+<!--     <html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>GPT2 in Numpy</title>
+  
+  <script defer="" src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">GPT2 in Numpy</h1>
+</header>
+<h1 id="introduction">Introduction</h1>
+<p>I thought it might be fun to write chat GPT in numpy. The plan is to
+slowly build out an autograd engine until we end up with GPT2. The repo
+for this project is <a href="https://github.com/sammy-snipes/numpy-GPT2">here</a>.</p>
+<figure id="fig:">
+<div class="center">
+<img src="/assets/img/test.jpg" style="width:80.0%" />
+</div>
+<figcaption>GPT2 architecture</figcaption>
+</figure>
+<p>First I implemented it in pytorch so I could see exactly what I
+needed. That implementation is <a href="https://github.com/sammy-snipes/numpy-GPT2/blob/main/numpyGPT/pytorch_reference.py">here</a>.
+I more or less copied Andrej Kaparhty’s implementation from his <a href="https://github.com/karpathy/ng-video-lecture">video</a> on it ,
+except I stuck the multihead attention in a single module using
+<code>einsum</code>.</p>
+<p>The way I want to set up the autograd engine is to have a
+<code>engine.py</code> file that contains a class called
+<code>Parameter</code> which holds data, grad, shape,..etc, and
+implements some dunders like <code>__add__</code>, <code>__mul__</code>
+while tracking gradient. Then well have a <code>functions.py</code> file
+that has <code>Parameter</code> implementations for
+<code>softmax</code>, <code>gelu</code>, <code>layernorm</code>.
+Finally, there will be a <code>models.py</code> file that has class
+wrappers to make it all feel like pytorch along with the GPT
+implementation.</p>
+<p>To figure out what class methods we need in <code>Parameter</code>
+lets start by listing the functions we want, and how those require
+<code>Parameter</code> to behave. e.g. <code>nn.LayerNorm</code>
+calculation uses mean and variance, so to implement that,
+<code>Parameter</code> needs some kind of <code>mean</code> method.</p>
+<ol>
+<li><p><code>nn.Embedding</code>. This is just a lookup table; nothing
+special required.</p></li>
+<li><p><code>einsum</code>. This is explicitly used in the
+mutlihead-attention. <code>nn.Linear</code> is just an einsum along the
+last two dimensions of the input, so we get that for free by
+implementing <code>einsum</code>.</p></li>
+<li><p><code>nn.GELU</code>. Nothing special required.</p></li>
+<li><p><code>nn.Dropout</code>. Nothing special required.</p></li>
+<li><p><code>einops.rearrange</code>. This is easy to implement and
+read, nothing special required.</p></li>
+<li><p><code>nn.Softmax</code>. Nothing special required.</p></li>
+<li><p><code>nn.CrossEntropyLoss</code>. Let <span class="math inline">Y</span> be the target, and our prediction <span class="math inline">\hat{Y} = \text{model}(X)</span>, then CE loss is
+given by <span class="math display">CE(Y, \hat{Y}) =
+-\frac{1}{N}\sum_{n, c}Y \odot \log \bigg(\text{softmax}
+\big(\hat{Y}\big) \bigg)</span> The haddamard product and sum can be
+handled by one einsum pattern <code>ij,ij-&gt;</code>, and we already
+have softmax above, so thats missing is <code>torch.log</code> which we
+can write a function for, and scalar multiplication which we can handle
+with the <code>__rmul__</code> dunder.</p></li>
+<li><p><code>nn.LayerNorm</code>. The equation is <span class="math display">ln = \frac{x - \text{E}[x]}{\sqrt{\text{Var}[x] +
+\epsilon}} * \gamma + \beta</span> where <span class="math inline">\gamma, \beta</span> are the same shape as the
+dimensions being normalized. This will require a <code>.mean()</code>
+method. We can get variance with <span class="math display">\text{var} =
+\text{E}[x^2] - \text{E}[x]^2</span> For all this we need the following
+dunders: <code>__pow__</code>, <code>__mul__</code>,
+<code>__add__</code>, <code>__sub__</code>. Instead of implemting
+<code>__div__</code> ill use negative exponents and multiplication so
+itll look like</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>    ln <span class="op">=</span> (x <span class="op">-</span> x.mean()) <span class="op">*</span> ((x<span class="op">**</span><span class="dv">2</span>).mean() <span class="op">-</span> (x.mean())<span class="op">**</span><span class="dv">2</span> <span class="op">+</span> eps) <span class="op">**</span> <span class="op">-</span><span class="fl">0.5</span> ...stuff...</span></code></pre></div></li>
+</ol>
+<p>That covers it for functions. For class methods theres two things we
+need that have yet to crop up. Both are in the attention implementation.
+Here is the forward method, in torch.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># torch # </span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MultiHeadSelfAttention(nn.Module):</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, embed_dim, num_heads) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.embed_dim <span class="op">=</span> embed_dim</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.num_heads <span class="op">=</span> num_heads</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.head_dim <span class="op">=</span> <span class="bu">int</span>(embed_dim <span class="op">/</span> num_heads)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.in_proj <span class="op">=</span> nn.Linear(embed_dim, <span class="dv">3</span> <span class="op">*</span> embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.out_proj <span class="op">=</span> nn.Linear(<span class="va">self</span>.head_dim <span class="op">*</span> num_heads, embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x):</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>        B, T, C <span class="op">=</span> x.shape</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>        qvk <span class="op">=</span> <span class="va">self</span>.in_proj(x)</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>        q, v, k <span class="op">=</span> <span class="bu">tuple</span>(</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>            rearrange(qvk, <span class="st">&quot;b t (d k h) -&gt; k b h t d&quot;</span>, k<span class="op">=</span><span class="dv">3</span>, h<span class="op">=</span><span class="va">self</span>.num_heads)</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>        scaled_prod <span class="op">=</span> einsum(<span class="st">&quot;bhid,bhjd-&gt;bhij&quot;</span>, q, k) <span class="op">*</span> (<span class="va">self</span>.head_dim) <span class="op">**</span> <span class="op">-</span><span class="fl">0.5</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>        mask <span class="op">=</span> torch.tril(torch.ones_like(scaled_prod))</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>        scaled_prod <span class="op">=</span> scaled_prod.masked_fill(mask <span class="op">==</span> <span class="dv">0</span>, <span class="op">-</span><span class="bu">float</span>(<span class="st">&quot;inf&quot;</span>))</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>        attention <span class="op">=</span> torch.softmax(scaled_prod, dim<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> einsum(<span class="st">&quot;bhij,bhjd-&gt;bhid&quot;</span>, attention, v)</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> rearrange(out, <span class="st">&quot;b h t d -&gt; b t (h d)&quot;</span>)</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.out_proj(out)</span></code></pre></div>
+<p>First we need a way to unpack a <code>Parameter</code> along an axis,
+and second we need masking support. All together the class methods we
+need are:</p>
+<ol>
+<li><p><code>__add__</code></p></li>
+<li><p><code>__sub__</code></p></li>
+<li><p><code>__mul__</code></p></li>
+<li><p><code>__pow__</code></p></li>
+<li><p><code>__rmul__</code></p></li>
+<li><p><code>mean()</code></p></li>
+<li><p><code>split()</code></p></li>
+<li><p><code>masked_fill()</code></p></li>
+</ol>
+<p>and then some utility stuff</p>
+<ol>
+<li><p><code>backward()</code>, something to trigger
+backpropogation</p></li>
+<li><p><code>sum()</code>, nice to have</p></li>
+<li><p><code>broadcast_helper</code>, broadcasting introduces some
+complications to backprop. Since addition, subtraction and
+multiplication all broadcast, we are going to make a seperate method get
+gradients for broadcasted operations.</p></li>
+</ol>
+<p>Cool, we have our grocery list of methods and functions so lets get
+down to business</p>
+<h1 id="the-class">The class</h1>
+<p>The <code>backward()</code> method is going to dictate a lot of what
+we do here so lets settle that first. I liked the way Andrej Kaparthy
+laid it out in his micrograd <a href="https://www.youtube.com/watch?v=VMj-3S1tku0">video</a>. Every
+<code>Parameter</code> will have a lambda function
+<code>_backward</code> that dictates how its gradient interacts with its
+children during backpropogation, and calling the class method
+<code>backward()</code> will call the <code>_backward</code> function of
+everything in the computational graph. For an example of how this should
+work</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>a, b <span class="op">=</span> Parameter(<span class="dv">2</span>), Parameter(<span class="dv">3</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>c <span class="op">=</span> a <span class="op">+</span> b</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>d <span class="op">=</span> c <span class="op">**</span> <span class="dv">2</span> <span class="op">-</span> c</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> d_backward():</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  c.grad <span class="op">+=</span> <span class="dv">2</span> <span class="op">*</span> c <span class="op">-</span> <span class="dv">1</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> c_backward():</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  a.grad <span class="op">+=</span> c.grad</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  b.grad <span class="op">+=</span> c.grad</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>d._backward <span class="op">=</span> d_backward</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>c._backward <span class="op">=</span> c_backward</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>d.backward()</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a.grad, b.grad) <span class="co"># 9, 9, theoretically...</span></span></code></pre></div>
+<p>with that were ready to start</p>
+<h2 id="init-and-backward">init and backward</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> List, Tuple</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Parameter:</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, data, _children<span class="op">=</span>()) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.data <span class="op">=</span> <span class="op">=</span> data</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.grad <span class="op">=</span> np.zeros_like(<span class="va">self</span>.data)</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>._children <span class="op">=</span> _children</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.shape <span class="op">=</span> <span class="va">self</span>.data.shape</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dim <span class="op">=</span> <span class="bu">len</span>(<span class="va">self</span>.shape) <span class="cf">if</span> <span class="va">self</span>.shape <span class="cf">else</span> <span class="dv">0</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>._backward <span class="op">=</span> <span class="kw">lambda</span>: <span class="va">None</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>):</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="va">self</span>.grad.shape <span class="op">==</span> ()</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.grad <span class="op">=</span> <span class="fl">1.0</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>        visited, stack <span class="op">=</span> <span class="bu">set</span>(), []</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> dfs(node):</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>            visited.add(node)</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> child <span class="kw">in</span> node._children:</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> child <span class="kw">not</span> <span class="kw">in</span> visited:</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>                    dfs(child)</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>            stack.append(node)</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>        dfs(<span class="va">self</span>)</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> node <span class="kw">in</span> stack[::<span class="op">-</span><span class="dv">1</span>]:</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>            node._backward()</span></code></pre></div>
+<p>For backward we first assert that its a scalar, and then call the
+<code>_backward</code> method of everything in the reverse order of the
+computational graph.</p>
+<h2 id="split">split</h2>
+<p>We want to be able to split a <code>Parameter</code>, do stuff to the
+children, and have the gradient backpropogate correctly.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> split(<span class="va">self</span>, dim<span class="op">=</span><span class="dv">0</span>) <span class="op">-&gt;</span> List[<span class="st">&quot;Parameter&quot;</span>]:</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>        data <span class="op">=</span> np.moveaxis(<span class="va">self</span>.data, dim, <span class="dv">0</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>        kids <span class="op">=</span> []</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> idx, <span class="bu">slice</span> <span class="kw">in</span> <span class="bu">enumerate</span>(data):</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>            kid <span class="op">=</span> Parameter(<span class="bu">slice</span>, _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>            <span class="kw">def</span> _undo_split(idx<span class="op">=</span>idx, kid<span class="op">=</span>kid):</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>                np.moveaxis(<span class="va">self</span>.grad, dim, <span class="dv">0</span>)[idx] <span class="op">+=</span> kid.grad</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>            kid._backward <span class="op">=</span> _undo_split</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>            kids.append(kid)</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> kids</span></code></pre></div>
+<p>Using <code>np.moveaxis</code> to bring the split axis to the zero
+dimension, we split the <code>Parameter</code> into children. To
+backpropogate we use <code>np.moveaxis</code> with the reverse operands
+to return a view, and then just add the child grad.</p>
+<h2 id="masked-fill">masked fill</h2>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> masked_fill(<span class="va">self</span>, mask: np.ndarray, value: <span class="bu">float</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>        out_data <span class="op">=</span> np.copy(<span class="va">self</span>.data)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>        out_data[mask] <span class="op">=</span> value</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(out_data, _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>            masked_grad <span class="op">=</span> np.copy(out.grad)</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>            masked_grad[mask] <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> masked_grad</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<p>For this, any value that gets masked has a zero gradient. For mask
+you would pass a boolean array like <code>x == 0</code></p>
+<h2 id="sum">sum</h2>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="bu">sum</span>(<span class="va">self</span>, dim<span class="op">=</span><span class="va">None</span>, keepdim<span class="op">=</span><span class="va">False</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(<span class="va">self</span>.data.<span class="bu">sum</span>(axis<span class="op">=</span>dim, keepdims<span class="op">=</span>keepdim), _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> (</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>                np.expand_dims(out.grad, dim)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> (dim <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="kw">and</span> <span class="kw">not</span> keepdim)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>                <span class="cf">else</span> out.grad</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<p>When <code>keepdim == True</code> dims are summed to be 1, so there
+are no broadcasting issues. If its false, suppose
+<code>a.shape = [2, 3, 4]</code>, and <code>c = a.sum(-1, 1)</code>,
+then backward pass will have <code>a.grad += c.grad</code>, which bricks
+since adding shapes <code>[2, 3, 4] += [3]</code> isnt valid. The
+solution is expand collapsed dims to 1.</p>
+<h2 id="mean">mean</h2>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> mean(<span class="va">self</span>, dim: Tuple[<span class="bu">int</span>], keepdim<span class="op">=</span><span class="va">True</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>        m <span class="op">=</span> np.mean(<span class="va">self</span>.data, dim, keepdims<span class="op">=</span>keepdim)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(m, _children<span class="op">=</span>(<span class="va">self</span>,))</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>            original_shape <span class="op">=</span> [<span class="bu">int</span>(_) <span class="cf">for</span> _ <span class="kw">in</span> <span class="va">self</span>.data.shape]</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>            new_shape <span class="op">=</span> [original_shape[d] <span class="cf">for</span> d <span class="kw">in</span> dim]</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>            out_grad <span class="op">=</span> out.grad <span class="cf">if</span> keepdim <span class="cf">else</span> np.expand_dims(out.grad, dim)</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> out_grad <span class="op">/</span> np.prod(new_shape)</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<p>The grad for mean is just <span class="math display">\frac{\partial}{\partial X}
+\big[\frac{1}{N}\sum{X}\big]= \frac{1}{N}</span> and we use the same
+reshaping we used for <code>sum</code></p>
+<h2 id="dunder">dunder</h2>
+<p>Lets first solve the broadcasting issue. Lets say somewhere in our
+network we have <code>a, b</code> of shapes
+<code>[2, 3, 4], [2, 3]</code>, and <code>c = a + b</code>. The backward
+pass will require</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>  a.grad <span class="op">+=</span> c.grad</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  b.grad <span class="op">+=</span> c.grad</span></code></pre></div>
+<p>but line 2 fails since <code>[2, 3, 4]</code> cant be broadcast into
+<code>[2, 3]</code>. So what is the grad supposed to be? When
+<code>a, b</code> get added, the broadcasting adds <code>b</code> to
+each array along the 0’th dimension of <code>a</code>. So the gradient
+w.r.t <code>a</code> is <code>c.grad</code> summed along the 0’th
+dimension. In general, to get the grad w.r.t. the broadcasted operand
+you just sum the grad from the left until it has the same shape as the
+operand.</p>
+<p>Theres one more case to handle. If we had <code>a, b</code> of shapes
+<code>[2, 3, 4], [2, 1, 4]</code>, we’ll throw a broadcasting error in
+the backward pass since <code>[2, 3, 4]</code> can be broadcast into
+<code>[2, 1, 4]</code> The solution is sum <code>c.grad</code> to 1
+along the 1’th dimension. <code>[2, 3, 4] -&gt; [2, 1, 4]</code>. In
+general, the grad has to be summed to 1 in whichever dims the
+broadcasted operand has dimension length 1.</p>
+<p>combinging both these cases</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>    <span class="at">@staticmethod</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> broadcast_helper(grad: np.ndarray, a: np.ndarray) <span class="op">-&gt;</span> np.ndarray:</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> grad.shape <span class="op">==</span> a.shape:</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> grad</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>            sum_dims <span class="op">=</span> <span class="bu">tuple</span>(<span class="bu">range</span>(<span class="bu">len</span>(grad.shape) <span class="op">-</span> <span class="bu">len</span>(a.shape)))</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>            sum_to_one <span class="op">=</span> <span class="bu">tuple</span>(_ <span class="cf">for</span> _, __ <span class="kw">in</span> <span class="bu">enumerate</span>(a.shape) <span class="cf">if</span> __ <span class="op">==</span> <span class="dv">1</span>)</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> grad.<span class="bu">sum</span>(sum_dims).<span class="bu">sum</span>(sum_to_one, keepdims<span class="op">=</span><span class="va">True</span>)</span></code></pre></div>
+<p>First we sum from the left until <code>grad</code> and <code>a</code>
+have the same number of dimensions, then whichever dims have length 1 in
+<code>a</code> get summed to 1 in <code>grad</code>. With this out of
+the way we can write our dunders. These are all straight forward so ill
+show addition and multiplication. <code>__pow__</code> doesnt have any
+broadcasting and the implementation is exactly what you expect.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__add__</span>(<span class="va">self</span>, other) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>        other <span class="op">=</span> other <span class="cf">if</span> <span class="bu">isinstance</span>(other, Parameter) <span class="cf">else</span> Parameter(other)</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(<span class="va">self</span>.data <span class="op">+</span> other.data, _children<span class="op">=</span>(<span class="va">self</span>, other))</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad, <span class="va">self</span>.grad)</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>            other.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad, other.grad)</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__mul__</span>(<span class="va">self</span>, other: <span class="st">&quot;Parameter&quot;</span>) <span class="op">-&gt;</span> <span class="st">&quot;Parameter&quot;</span>:</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> Parameter(<span class="va">self</span>.data <span class="op">*</span> other.data, _children<span class="op">=</span>(<span class="va">self</span>, other))</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> _backward():</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad <span class="op">*</span> other.data, <span class="va">self</span>.grad)</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>            other.grad <span class="op">+=</span> <span class="va">self</span>.broadcast_helper(out.grad <span class="op">*</span> <span class="va">self</span>.data, other.grad)</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>        out._backward <span class="op">=</span> _backward</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> out</span></code></pre></div>
+<h1 id="functions">Functions</h1>
+<p>I said this was going to be in numpy but I guess I lied.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> einops <span class="im">import</span> repeat</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> einops <span class="im">import</span> rearrange <span class="im">as</span> erearrange</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> string</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> .engine <span class="im">import</span> Parameter</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> scipy.stats <span class="im">import</span> norm</span></code></pre></div>
+<p>SciPy is for <code>GELU</code>, and the einops stuff is because I’m
+going to implement a rearrange function for <code>Parameter</code> that
+just calls the einops version lol. We’ve built out far enough that a lot
+of the function implementations are straightforward.</p>
+<h2 id="einsum">einsum</h2>
+<p>I have a more detailed post about how this is calculated <a href="https://sammy-snipes.github.io/einsum-gradient/">here</a>, but
+heres the final code</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> einsum(ptrn: <span class="bu">str</span>, <span class="op">*</span>args: Parameter) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Parameter(np.einsum(ptrn, <span class="op">*</span>[_.data <span class="cf">for</span> _ <span class="kw">in</span> args]), _children<span class="op">=</span><span class="bu">tuple</span>(args))</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>        in_ptrn, out_ptrn <span class="op">=</span> ptrn.split(<span class="st">&quot;-&gt;&quot;</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>        in_ptrns <span class="op">=</span> in_ptrn.split(<span class="st">&quot;,&quot;</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="kw">not</span> out_ptrn:</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>            out_ptrn <span class="op">=</span> <span class="st">&quot;&quot;</span>.join(<span class="bu">list</span>(<span class="bu">set</span>(string.ascii_lowercase) <span class="op">-</span> <span class="bu">set</span>(in_ptrn))[<span class="dv">0</span>])</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>            temp_out_grad <span class="op">=</span> np.expand_dims(out.grad, <span class="dv">0</span>)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>            temp_out_grad <span class="op">=</span> out.grad</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> calc_grad(idx):</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>            op_ptrn, op <span class="op">=</span> in_ptrns[idx], args[idx]</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>            other_op_ptrns <span class="op">=</span> in_ptrns[:idx] <span class="op">+</span> in_ptrns[idx <span class="op">+</span> <span class="dv">1</span> :]</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>            known_dims <span class="op">=</span> <span class="st">&quot;&quot;</span>.join(</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>                [c <span class="cf">for</span> c <span class="kw">in</span> op_ptrn <span class="cf">if</span> c <span class="kw">in</span> <span class="st">&quot;&quot;</span>.join(other_op_ptrns) <span class="op">+</span> out_ptrn]</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>            grad_string <span class="op">=</span> <span class="ss">f&quot;</span><span class="sc">{</span>out_ptrn<span class="sc">}</span><span class="ss">,</span><span class="sc">{</span><span class="st">&#39;,&#39;</span><span class="sc">.</span>join(other_op_ptrns)<span class="sc">}</span><span class="ss">-&gt;</span><span class="sc">{</span>known_dims<span class="sc">}</span><span class="ss">&quot;</span></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="kw">not</span> other_op_ptrns:</span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>                grad_string <span class="op">=</span> grad_string.replace(<span class="st">&quot;,&quot;</span>, <span class="st">&quot;&quot;</span>)</span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>            grad <span class="op">=</span> np.einsum(</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>                grad_string, temp_out_grad, <span class="op">*</span>[_.data <span class="cf">for</span> _ <span class="kw">in</span> args <span class="cf">if</span> _ <span class="op">!=</span> op]</span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> known_dims <span class="op">!=</span> op_ptrn:</span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>                expand_dims <span class="op">=</span> <span class="bu">tuple</span>(</span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a>                    _ <span class="cf">for</span> _, __ <span class="kw">in</span> <span class="bu">enumerate</span>(op_ptrn) <span class="cf">if</span> __ <span class="kw">not</span> <span class="kw">in</span> known_dims</span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a>                )</span>
+<span id="cb13-29"><a href="#cb13-29" aria-hidden="true" tabindex="-1"></a>                grad <span class="op">=</span> np.expand_dims(grad, expand_dims)</span>
+<span id="cb13-30"><a href="#cb13-30" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> grad</span>
+<span id="cb13-31"><a href="#cb13-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-32"><a href="#cb13-32" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> idx, arg <span class="kw">in</span> <span class="bu">enumerate</span>(args):</span>
+<span id="cb13-33"><a href="#cb13-33" aria-hidden="true" tabindex="-1"></a>            arg.grad <span class="op">+=</span> calc_grad(idx)</span>
+<span id="cb13-34"><a href="#cb13-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-35"><a href="#cb13-35" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb13-36"><a href="#cb13-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span></code></pre></div>
+<p>For an einsum pattern like <code>ij,jk-&gt;ik</code>, the grad w.r.t.
+operand 0 is <code>ik,jk-&gt;ij</code>. Problems arise if you sum to a
+scalar. E.g. <code>ij,jk-&gt;</code> would reverse to
+<code>,jk-ij</code>.</p>
+<p>This bricks becasue operand zero needs a string, and the
+<code>i</code> in the output string is unknown. The first problem we
+solve by making grad 1d if its scalar, and assigning it a unique letter.
+We solve the second issue by making the out string of our reversed
+einsum only the known dimensions. i.e. the dimensions of the operand
+contained in the other operands or output. So the grad string of
+<code>ij,jk-&gt;</code> would be <code>q,jk-&gt;j</code>, where
+<code>q</code> is an arbitrary letter. This is of course the wrong shape
+but we solve by expanding to 1 along the missing dimensions, and then
+the gradient broadcasts with no issues.</p>
+<p>This works for any number of arguments, im pretty sure.</p>
+<p>At this point we are basically done, really. We have core operations
+in our <code>Parameter</code> class methods and we just added support
+for arbitrary einsum operations. From here on out we dont even need to
+think. Softmax is just</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> exp(x: Parameter) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Parameter(np.exp(x.data), _children<span class="op">=</span>(x,))</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>        x.grad <span class="op">+=</span> out.data <span class="op">*</span> out.grad</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> softmax(x: Parameter, dim<span class="op">=-</span><span class="dv">1</span>) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>    e <span class="op">=</span> exp(x)</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> e <span class="op">*</span> (e.<span class="bu">sum</span>(dim, keepdim<span class="op">=</span><span class="va">True</span>) <span class="op">**</span> <span class="op">-</span><span class="dv">1</span>)</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span></code></pre></div>
+<p>and cross entropy is just</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> log(x: Parameter) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> Parameter(np.log(x.data), _children<span class="op">=</span>(x,))</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _backward():</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>        x.grad <span class="op">+=</span> out.grad <span class="op">*</span> (<span class="dv">1</span> <span class="op">/</span> x.data)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    out._backward <span class="op">=</span> _backward</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cross_entropy_loss(x: Parameter, y: Parameter, dim<span class="op">=-</span><span class="dv">1</span>) <span class="op">-&gt;</span> Parameter:</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">any</span>([_.data.dtype <span class="op">!=</span> np.float64 <span class="cf">for</span> _ <span class="kw">in</span> (x, y)]):</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">TypeError</span>(<span class="st">&quot;cross entropy takes float64&quot;</span>)</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>    log_soft <span class="op">=</span> log(softmax(x, dim<span class="op">=</span>dim))</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>    ptrn <span class="op">=</span> string.ascii_lowercase[: <span class="bu">len</span>(x.data.shape)]</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="bu">float</span>(<span class="op">-</span>x.data.shape[<span class="dv">0</span>]) <span class="op">**</span> <span class="op">-</span><span class="dv">1</span>) <span class="op">*</span> einsum(<span class="ss">f&quot;</span><span class="sc">{</span>ptrn<span class="sc">}</span><span class="ss">,</span><span class="sc">{</span>ptrn<span class="sc">}</span><span class="ss">-&gt;&quot;</span>, log_soft, y)</span></code></pre></div>
+<p>I’m going to leave out the rest of the functions, since the
+implementation is exactly what you expect.</p>
+<h1 id="gpt">GPT</h1>
+<p>At this point I wrote a bunch of code to make class wrappers for our
+functions so they feel more like pytorch. For example heres the
+embedding</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Embedding(Module):</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, num_embeddings, embedding_dim) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.weight <span class="op">=</span> Parameter(shape<span class="op">=</span>(num_embeddings, embedding_dim))</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: torch.nn.Module) <span class="op">-&gt;</span> <span class="st">&quot;Module&quot;</span>:</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [(<span class="st">&quot;weight&quot;</span>, <span class="va">self</span>._weight_to_param)]</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x: Parameter):</span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> embed(x.data, <span class="va">self</span>.weight)</span></code></pre></div>
+<p>The <code>_from_torch</code> method allows me to initialize an
+<code>Embedding</code> object from a <code>nn.Embedding</code> by
+copying+detaching its weight, converting it to a <code>Parameter</code>,
+and assigning it to the object. The <code>_weight_to_param</code> does
+what the name implies, and theres another method
+<code>_do_nothing</code> used for assigning non-learnable attributes
+like softmax dim, layer norm shape, ...etc. Finally in theres a global
+function <code>convert_nn_module</code> that converts
+<code>nn.Module</code>’s to their <code>Parameter</code> based
+equivalent by checking a dictionary.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch.nn <span class="im">as</span> nn</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>CONVERSION_DICT <span class="op">=</span> {</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>    nn.Linear: Linear,</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>    nn.Softmax: Softmax,</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>    nn.CrossEntropyLoss: CrossEntropyLoss,</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>    nn.ReLU: ReLU,</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>    nn.GELU: GELU,</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>    nn.Embedding: Embedding,</span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>    nn.Dropout: Dropout,</span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>    nn.LayerNorm: LayerNorm,</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>    nn.Sequential: Sequential,</span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>    r.MultiHeadSelfAttention: MultiheadAttention,</span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>    r.Block: Block,</span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> convert_nn_module(x: nn.Module):</span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> CONVERSION_DICT[<span class="bu">type</span>(x)]._from_torch(x)</span></code></pre></div>
+<p>The final GPT implementation looks alot like the original pytorch
+implementation.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MultiheadAttention(Module):</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, embed_dim, num_heads) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.embed_dim <span class="op">=</span> embed_dim</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.num_heads <span class="op">=</span> num_heads</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.head_dim <span class="op">=</span> <span class="bu">int</span>(embed_dim <span class="op">/</span> num_heads)</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.in_proj <span class="op">=</span> Linear(embed_dim, <span class="dv">3</span> <span class="op">*</span> embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.out_proj <span class="op">=</span> Linear(embed_dim, embed_dim, bias<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: nn.Module):</span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [</span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;in_proj&quot;</span>, convert_nn_module),</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;out_proj&quot;</span>, convert_nn_module),</span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;embed_dim&quot;</span>, <span class="va">self</span>._do_nothing),</span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;num_heads&quot;</span>, <span class="va">self</span>._do_nothing),</span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;head_dim&quot;</span>, <span class="va">self</span>._do_nothing),</span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x: Parameter):</span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>        qvk <span class="op">=</span> <span class="va">self</span>.in_proj(x)</span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a>        qvk <span class="op">=</span> rearrange(qvk, <span class="st">&quot;b t (d k h) -&gt; k b h t d&quot;</span>, k<span class="op">=</span><span class="dv">3</span>, h<span class="op">=</span><span class="va">self</span>.num_heads)</span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a>        q, v, k <span class="op">=</span> qvk.split(<span class="dv">0</span>)</span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a>        scaled_product <span class="op">=</span> (<span class="va">self</span>.head_dim<span class="op">**-</span><span class="fl">0.5</span>) <span class="op">*</span> einsum(<span class="st">&quot;bhid,bhjd-&gt;bhij&quot;</span>, q, k)</span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>        mask <span class="op">=</span> np.tril(np.ones_like(scaled_product.data))</span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a>        scaled_product <span class="op">=</span> scaled_product.masked_fill(mask <span class="op">==</span> <span class="dv">0</span>, <span class="op">-</span>np.inf)</span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a>        attention <span class="op">=</span> softmax(scaled_product, dim<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> einsum(<span class="st">&quot;bhij,bhjd-&gt;bhid&quot;</span>, attention, v)</span>
+<span id="cb18-33"><a href="#cb18-33" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> rearrange(out, <span class="st">&quot;b h t d -&gt; b t (h d)&quot;</span>, h<span class="op">=</span><span class="va">self</span>.num_heads, d<span class="op">=</span><span class="va">self</span>.head_dim)</span>
+<span id="cb18-34"><a href="#cb18-34" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.out_proj(out)</span>
+<span id="cb18-35"><a href="#cb18-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-36"><a href="#cb18-36" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> parameters(<span class="va">self</span>):</span>
+<span id="cb18-37"><a href="#cb18-37" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.in_proj.parameters() <span class="op">+</span> <span class="va">self</span>.out_proj.parameters()</span>
+<span id="cb18-38"><a href="#cb18-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-39"><a href="#cb18-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-40"><a href="#cb18-40" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Block(Module):</span>
+<span id="cb18-41"><a href="#cb18-41" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, embed_dim, num_heads, p<span class="op">=</span><span class="fl">0.0</span>):</span>
+<span id="cb18-42"><a href="#cb18-42" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb18-43"><a href="#cb18-43" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.ln1, <span class="va">self</span>.ln2 <span class="op">=</span> [</span>
+<span id="cb18-44"><a href="#cb18-44" aria-hidden="true" tabindex="-1"></a>            LayerNorm(normalized_shape<span class="op">=</span>(embed_dim,)) <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">2</span>)</span>
+<span id="cb18-45"><a href="#cb18-45" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-46"><a href="#cb18-46" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.attn <span class="op">=</span> MultiheadAttention(embed_dim, num_heads)</span>
+<span id="cb18-47"><a href="#cb18-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-48"><a href="#cb18-48" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.mlp <span class="op">=</span> Sequential(</span>
+<span id="cb18-49"><a href="#cb18-49" aria-hidden="true" tabindex="-1"></a>            Linear(embed_dim, embed_dim <span class="op">*</span> <span class="dv">4</span>),</span>
+<span id="cb18-50"><a href="#cb18-50" aria-hidden="true" tabindex="-1"></a>            GELU(),</span>
+<span id="cb18-51"><a href="#cb18-51" aria-hidden="true" tabindex="-1"></a>            Linear(embed_dim <span class="op">*</span> <span class="dv">4</span>, embed_dim),</span>
+<span id="cb18-52"><a href="#cb18-52" aria-hidden="true" tabindex="-1"></a>            Dropout(p),</span>
+<span id="cb18-53"><a href="#cb18-53" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb18-54"><a href="#cb18-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-55"><a href="#cb18-55" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x):</span>
+<span id="cb18-56"><a href="#cb18-56" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> x <span class="op">+</span> <span class="va">self</span>.attn(<span class="va">self</span>.ln1(x))</span>
+<span id="cb18-57"><a href="#cb18-57" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> x <span class="op">+</span> <span class="va">self</span>.mlp(<span class="va">self</span>.ln2(x))</span>
+<span id="cb18-58"><a href="#cb18-58" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> x</span>
+<span id="cb18-59"><a href="#cb18-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-60"><a href="#cb18-60" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb18-61"><a href="#cb18-61" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: nn.Module):</span>
+<span id="cb18-62"><a href="#cb18-62" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb18-63"><a href="#cb18-63" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [</span>
+<span id="cb18-64"><a href="#cb18-64" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;ln1&quot;</span>, convert_nn_module),</span>
+<span id="cb18-65"><a href="#cb18-65" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;ln2&quot;</span>, convert_nn_module),</span>
+<span id="cb18-66"><a href="#cb18-66" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;attn&quot;</span>, convert_nn_module),</span>
+<span id="cb18-67"><a href="#cb18-67" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;mlp&quot;</span>, convert_nn_module),</span>
+<span id="cb18-68"><a href="#cb18-68" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-69"><a href="#cb18-69" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span>
+<span id="cb18-70"><a href="#cb18-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-71"><a href="#cb18-71" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> parameters(<span class="va">self</span>):</span>
+<span id="cb18-72"><a href="#cb18-72" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> (</span>
+<span id="cb18-73"><a href="#cb18-73" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.ln1.parameters()</span>
+<span id="cb18-74"><a href="#cb18-74" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="va">self</span>.ln2.parameters()</span>
+<span id="cb18-75"><a href="#cb18-75" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="va">self</span>.attn.parameters()</span>
+<span id="cb18-76"><a href="#cb18-76" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="va">self</span>.mlp.parameters()</span>
+<span id="cb18-77"><a href="#cb18-77" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb18-78"><a href="#cb18-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-79"><a href="#cb18-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-80"><a href="#cb18-80" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> GPT(Module):</span>
+<span id="cb18-81"><a href="#cb18-81" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, vocab_size, embed_dim, num_heads, seq_length, n_blocks) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb18-82"><a href="#cb18-82" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb18-83"><a href="#cb18-83" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.token_embedding <span class="op">=</span> Embedding(vocab_size, embed_dim)</span>
+<span id="cb18-84"><a href="#cb18-84" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.position_embedding <span class="op">=</span> Embedding(seq_length, embed_dim)</span>
+<span id="cb18-85"><a href="#cb18-85" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.blocks <span class="op">=</span> Sequential(</span>
+<span id="cb18-86"><a href="#cb18-86" aria-hidden="true" tabindex="-1"></a>            <span class="op">*</span>[Block(embed_dim, num_heads) <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(n_blocks)]</span>
+<span id="cb18-87"><a href="#cb18-87" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb18-88"><a href="#cb18-88" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.ln_f <span class="op">=</span> LayerNorm((embed_dim,))</span>
+<span id="cb18-89"><a href="#cb18-89" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.lm_head <span class="op">=</span> Linear(embed_dim, vocab_size)</span>
+<span id="cb18-90"><a href="#cb18-90" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-91"><a href="#cb18-91" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, idx: Parameter):</span>
+<span id="cb18-92"><a href="#cb18-92" aria-hidden="true" tabindex="-1"></a>        B, T <span class="op">=</span> idx.shape</span>
+<span id="cb18-93"><a href="#cb18-93" aria-hidden="true" tabindex="-1"></a>        tok_emb <span class="op">=</span> <span class="va">self</span>.token_embedding(idx)</span>
+<span id="cb18-94"><a href="#cb18-94" aria-hidden="true" tabindex="-1"></a>        pos_emb <span class="op">=</span> <span class="va">self</span>.position_embedding(Parameter(np.arange(T)))</span>
+<span id="cb18-95"><a href="#cb18-95" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> tok_emb <span class="op">+</span> pos_emb</span>
+<span id="cb18-96"><a href="#cb18-96" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> <span class="va">self</span>.blocks(x)</span>
+<span id="cb18-97"><a href="#cb18-97" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> <span class="va">self</span>.ln_f(x)</span>
+<span id="cb18-98"><a href="#cb18-98" aria-hidden="true" tabindex="-1"></a>        logits <span class="op">=</span> <span class="va">self</span>.lm_head(x)</span>
+<span id="cb18-99"><a href="#cb18-99" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> logits</span>
+<span id="cb18-100"><a href="#cb18-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-101"><a href="#cb18-101" aria-hidden="true" tabindex="-1"></a>    <span class="at">@classmethod</span></span>
+<span id="cb18-102"><a href="#cb18-102" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _from_torch(cls, x: nn.Module):</span>
+<span id="cb18-103"><a href="#cb18-103" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span> <span class="op">=</span> cls.<span class="fu">__new__</span>(cls)</span>
+<span id="cb18-104"><a href="#cb18-104" aria-hidden="true" tabindex="-1"></a>        attrs <span class="op">=</span> [</span>
+<span id="cb18-105"><a href="#cb18-105" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;token_embedding&quot;</span>, convert_nn_module),</span>
+<span id="cb18-106"><a href="#cb18-106" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;position_embedding&quot;</span>, convert_nn_module),</span>
+<span id="cb18-107"><a href="#cb18-107" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;blocks&quot;</span>, convert_nn_module),</span>
+<span id="cb18-108"><a href="#cb18-108" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;ln_f&quot;</span>, convert_nn_module),</span>
+<span id="cb18-109"><a href="#cb18-109" aria-hidden="true" tabindex="-1"></a>            (<span class="st">&quot;lm_head&quot;</span>, convert_nn_module),</span>
+<span id="cb18-110"><a href="#cb18-110" aria-hidden="true" tabindex="-1"></a>        ]</span>
+<span id="cb18-111"><a href="#cb18-111" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.set_attrs(x, <span class="va">self</span>, attrs)</span></code></pre></div>
+<p>And thats it. We got GPT2 running in numpy. I tested this with no
+dropout, since I dont know how to synchronize random states between
+numpy and torch, and the otuputs/gradients are all identical. Pretty
+dope.</p>
+</body>
+</html>
+
+ -->
+<!--   </article> -->
+<!---->
+<!--   <footer class="post-footer"> -->
+<!--     <div class="post-nav"> -->
+<!--        -->
+<!--       <a class="prev" href="/2024-01-18-einsum-gradient/main/">&laquo; 2024-01-18-einsum-gradient</a> -->
+<!--        -->
+<!--        -->
+<!--       <a class="next" href="/2025-04-16-test/test/">2025-04-16-test &raquo;</a> -->
+<!--        -->
+<!--     </div> -->
+<!--   </footer> -->
+<!-- </div> -->
+
+</body>
+</html>
+
