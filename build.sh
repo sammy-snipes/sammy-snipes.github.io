@@ -1,12 +1,5 @@
 #!/bin/bash
 
-DEBUG=false
-
-if [[ "$1" == "--debug" ]]; then
-  DEBUG=true
-fi
-
-# Process each .tex file
 for file in tex/**/*.tex; do
   reldir=$(dirname "$file" | sed 's|^tex/||')
   
@@ -16,21 +9,14 @@ for file in tex/**/*.tex; do
   mkdir -p "_includes/tex/$reldir"
   
   echo "Converting $file to _includes/tex/$reldir/$name.html"
-  pandoc "$file" \
-    -f latex \
-    -t html \
-    --standalone \
-    --katex \
-    --highlight-style=pygments \
-    -o "_includes/tex/$reldir/$name.html"
-  
-  # Clean up the generated HTML (unless debugging)
-  if [ "$DEBUG" = false ]; then
-    echo "Cleaning _includes/tex/$reldir/$name.html"
-    python3 clean_html.py "_includes/tex/$reldir/$name.html" "_includes/tex/$reldir/$name.html"
-  else
-    echo "Skipping clean for _includes/tex/$reldir/$name.html (debug mode)"
-  fi
+    pandoc "$file" \
+      -f latex \
+      -t html \
+      --template=assets/template/custom.html \
+      --katex \
+      --css=assets/css/style.css \
+      --highlight-style=assets/template/cat.theme \
+      -o "_includes/tex/$reldir/$name.html"
   
   dirbase=$(basename "$reldir")
   mkdir -p "_posts/$reldir"

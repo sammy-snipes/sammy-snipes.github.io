@@ -86,23 +86,6 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Syntax Highlighting */
-code.sourceCode { color: var(--code-text); }
-
-.kw { color: #ff7ab2; font-weight: bold; } /* Keyword */
-.dt { color: #fab387; } /* DataType */
-.dv { color: #f5e0dc; } /* Decimal/Number */
-.st { color: #a6e3a1; } /* String */
-.co { color: #6c7086; font-style: italic; } /* Comment */
-.op { color: #f5c2e7; } /* Operator */
-.bn { color: #f5e0dc; } /* BaseN */
-.va { color: #cdd6f4; } /* Variable */
-.cf { color: #ff7ab2; font-weight: bold; } /* ControlFlow */
-.fu { color: #89b4fa; } /* Function */
-
-
-
-/* Navbar */
 .navbar {
   position: fixed;
   top: 1rem;

@@ -6,12 +6,12 @@ def clean_html(html_content):
     html_content = re.sub(
         r"<!DOCTYPE[^>]*>\s*", "", html_content, flags=re.IGNORECASE
     )
-    html_content = re.sub(
-        r"<style.*?>.*?</style>",
-        "",
-        html_content,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
+    # html_content = re.sub(
+    #     r"<style.*?>.*?</style>",
+    #     "",
+    #     html_content,
+    #     flags=re.DOTALL | re.IGNORECASE,
+    # )
     return html_content
 
 

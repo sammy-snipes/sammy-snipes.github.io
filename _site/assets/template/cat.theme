@@ -1,0 +1,28 @@
+{
+  "text-color": "#cdd6f4",
+  "background-color": "#1e1e2e",
+  "line-number-color": "#a6adc8",
+  "line-number-background-color": "#1e1e2e",
+  "text-styles": {
+    "Keyword":        { "text-color": "#f38ba8", "bold": true },
+    "ControlFlow":    { "text-color": "#f38ba8", "bold": true },
+    "Import":         { "text-color": "#89b4fa", "bold": true },
+    "Operator":       { "text-color": "#f5c2e7" },
+    "Function":       { "text-color": "#cba6f7" },
+    "String":         { "text-color": "#a6e3a1" },
+    "VerbatimString": { "text-color": "#a6e3a1" },
+    "Number":         { "text-color": "#fab387" },
+    "DecVal":         { "text-color": "#fab387" },
+    "BaseN":          { "text-color": "#fab387" },
+    "Comment":        { "text-color": "#6c7086", "italic": true },
+    "CommentVar":     { "text-color": "#6c7086", "italic": true },
+    "Variable":       { "text-color": "#cdd6f4" },
+    "Constant":       { "text-color": "#f9e2af" },
+    "Attribute":      { "text-color": "#f9e2af" },
+    "Preprocessor":   { "text-color": "#f38ba8" },
+    "Annotation":     { "text-color": "#94e2d5", "italic": true },
+    "SpecialChar":    { "text-color": "#cba6f7" },
+    "SpecialString":  { "text-color": "#cba6f7" },
+    "Error":          { "text-color": "#f38ba8", "bold": true, "underline": true }
+  }
+}
