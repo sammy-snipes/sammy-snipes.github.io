@@ -1,0 +1,15 @@
+\begin{MintedVerbatim}[commandchars=\\\{\}]
+\PYG{k+kn}{from}\PYG{+w}{ }\PYG{n+nn}{collections}\PYG{+w}{ }\PYG{k+kn}{import} \PYG{n}{deque}
+\PYG{k+kn}{import}\PYG{+w}{ }\PYG{n+nn}{numpy}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n+nn}{np}
+
+\PYG{k}{class}\PYG{+w}{ }\PYG{n+nc}{Thing}\PYG{p}{:}
+    \PYG{k}{def}\PYG{+w}{ }\PYG{n+nf+fm}{\PYGZus{}\PYGZus{}init\PYGZus{}\PYGZus{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,} \PYG{n}{data}\PYG{p}{,} \PYG{n}{\PYGZus{}children}\PYG{o}{=}\PYG{p}{[}\PYG{p}{]}\PYG{p}{)} \PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZgt{}} \PYG{k+kc}{None}\PYG{p}{:}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{data} \PYG{o}{=} \PYG{n}{data} \PYG{k}{if} \PYG{n}{data}\PYG{o}{.}\PYG{n}{shape} \PYG{k}{else} \PYG{n}{data}\PYG{o}{.}\PYG{n}{reshape}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{l+m+mi}{1}\PYG{p}{)}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{\PYGZus{}children} \PYG{o}{=} \PYG{n}{\PYGZus{}children}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{\PYGZus{}backward} \PYG{o}{=} \PYG{k}{lambda}\PYG{p}{:} \PYG{k+kc}{None}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{grad} \PYG{o}{=} \PYG{n}{np}\PYG{o}{.}\PYG{n}{zeros\PYGZus{}like}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{data}\PYG{p}{)}
+
+    \PYG{k}{def}\PYG{+w}{ }\PYG{n+nf}{backward}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{p}{:}
+        \PYG{n+nb+bp}{self}\PYG{o}{.}\PYG{n}{grad}\PYG{p}{,} \PYG{n}{visited}\PYG{p}{,} \PYG{n}{queue} \PYG{o}{=} \PYG{n}{np}\PYG{o}{.}\PYG{n}{ones}\PYG{p}{(}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,} \PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,} \PYG{n+nb}{set}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,} \PYG{n}{deque}\PYG{p}{(}\PYG{p}{[}\PYG{n+nb+bp}{self}\PYG{p}{]}\PYG{p}{)}
+        \PYG{k}{while} \PYG{n}{queue}\PYG{p}{:} \PYG{n}{v} \PYG{o}{=} \PYG{n}{queue}\PYG{o}{.}\PYG{n}{popleft}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;} \PYG{p}{[}\PYG{n}{visited}\PYG{o}{.}\PYG{n}{add}\PYG{p}{(}\PYG{n}{v}\PYG{p}{)}\PYG{p}{,} \PYG{n}{v}\PYG{o}{.}\PYG{n}{\PYGZus{}backward}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,} \PYG{n}{queue}\PYG{o}{.}\PYG{n}{extend}\PYG{p}{(}\PYG{n}{n} \PYG{k}{for} \PYG{n}{n} \PYG{o+ow}{in} \PYG{n}{v}\PYG{o}{.}\PYG{n}{\PYGZus{}children} \PYG{k}{if} \PYG{n}{n} \PYG{o+ow}{not} \PYG{o+ow}{in} \PYG{n}{visited}\PYG{p}{)}\PYG{p}{]}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}
+\end{MintedVerbatim}

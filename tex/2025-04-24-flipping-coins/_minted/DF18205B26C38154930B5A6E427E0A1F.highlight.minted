@@ -1,0 +1,31 @@
+\begin{MintedVerbatim}[commandchars=\\\{\}]
+
+\PYG{k+kn}{import}\PYG{+w}{ }\PYG{n+nn}{re}
+\PYG{k+kn}{import}\PYG{+w}{ }\PYG{n+nn}{sys}
+
+\PYG{k}{def}\PYG{+w}{ }\PYG{n+nf}{clean\PYGZus{}html}\PYG{p}{(}\PYG{n}{html\PYGZus{}content}\PYG{p}{)}\PYG{p}{:}
+    \PYG{n}{html\PYGZus{}content} \PYG{o}{=} \PYG{n}{re}\PYG{o}{.}\PYG{n}{sub}\PYG{p}{(}
+        \PYG{l+s+sa}{r}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{\PYGZlt{}!DOCTYPE[\PYGZca{}\PYGZgt{}]*\PYGZgt{}}\PYG{l+s+s2}{\PYGZbs{}}\PYG{l+s+s2}{s*}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,} \PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,} \PYG{n}{html\PYGZus{}content}\PYG{p}{,} \PYG{n}{flags}\PYG{o}{=}\PYG{n}{re}\PYG{o}{.}\PYG{n}{IGNORECASE}
+    \PYG{p}{)}
+    \PYG{n}{html\PYGZus{}content} \PYG{o}{=} \PYG{n}{re}\PYG{o}{.}\PYG{n}{sub}\PYG{p}{(}
+        \PYG{l+s+sa}{r}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{\PYGZlt{}style.*?\PYGZgt{}.*?\PYGZlt{}/style\PYGZgt{}}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,}
+        \PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,}
+        \PYG{n}{html\PYGZus{}content}\PYG{p}{,}
+        \PYG{n}{flags}\PYG{o}{=}\PYG{n}{re}\PYG{o}{.}\PYG{n}{DOTALL} \PYG{o}{|} \PYG{n}{re}\PYG{o}{.}\PYG{n}{IGNORECASE}\PYG{p}{,}
+    \PYG{p}{)}
+    \PYG{k}{return} \PYG{n}{html\PYGZus{}content}
+
+
+\PYG{k}{if} \PYG{n+nv+vm}{\PYGZus{}\PYGZus{}name\PYGZus{}\PYGZus{}} \PYG{o}{==} \PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{\PYGZus{}\PYGZus{}main\PYGZus{}\PYGZus{}}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{:}
+    \PYG{n}{input\PYGZus{}file} \PYG{o}{=} \PYG{n}{sys}\PYG{o}{.}\PYG{n}{argv}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}
+    \PYG{n}{output\PYGZus{}file} \PYG{o}{=} \PYG{n}{sys}\PYG{o}{.}\PYG{n}{argv}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{p}{]}
+
+    \PYG{k}{with} \PYG{n+nb}{open}\PYG{p}{(}\PYG{n}{input\PYGZus{}file}\PYG{p}{,} \PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{r}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,} \PYG{n}{encoding}\PYG{o}{=}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{utf\PYGZhy{}8}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{)} \PYG{k}{as} \PYG{n}{f}\PYG{p}{:}
+        \PYG{n}{html} \PYG{o}{=} \PYG{n}{f}\PYG{o}{.}\PYG{n}{read}\PYG{p}{(}\PYG{p}{)}
+
+    \PYG{n}{cleaned\PYGZus{}html} \PYG{o}{=} \PYG{n}{clean\PYGZus{}html}\PYG{p}{(}\PYG{n}{html}\PYG{p}{)}
+
+    \PYG{k}{with} \PYG{n+nb}{open}\PYG{p}{(}\PYG{n}{output\PYGZus{}file}\PYG{p}{,} \PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{w}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,} \PYG{n}{encoding}\PYG{o}{=}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{utf\PYGZhy{}8}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{)} \PYG{k}{as} \PYG{n}{f}\PYG{p}{:}
+        \PYG{n}{f}\PYG{o}{.}\PYG{n}{write}\PYG{p}{(}\PYG{n}{cleaned\PYGZus{}html}\PYG{p}{)}
+
+\end{MintedVerbatim}

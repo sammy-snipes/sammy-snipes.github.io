@@ -1,0 +1,30 @@
+\begin{MintedVerbatim}[commandchars=\\\{\}]
+\PYG{k+kn}{from}\PYG{+w}{ }\PYG{n+nn}{einops}\PYG{+w}{ }\PYG{k+kn}{import} \PYG{n}{repeat}
+
+\PYG{k}{def}\PYG{+w}{ }\PYG{n+nf}{\PYGZus{}einsum}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{)}\PYG{p}{:}
+    \PYG{n}{out} \PYG{o}{=} \PYG{n}{Thing}\PYG{p}{(}\PYG{n}{np}\PYG{o}{.}\PYG{n}{einsum}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{o}{.}\PYG{n}{data}\PYG{p}{,} \PYG{n}{w}\PYG{o}{.}\PYG{n}{data}\PYG{p}{)}\PYG{p}{,} \PYG{n}{\PYGZus{}children}\PYG{o}{=}\PYG{p}{[}\PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{]}\PYG{p}{)}
+    \PYG{k}{def}\PYG{+w}{ }\PYG{n+nf}{\PYGZus{}backward}\PYG{p}{(}\PYG{p}{)}\PYG{p}{:}
+        \PYG{n}{x\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{w\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{z\PYGZus{}ptrn} \PYG{o}{=} \PYG{o}{*}\PYG{n}{ptrn}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{\PYGZhy{}\PYGZgt{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{)}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{,}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{)}\PYG{p}{,} \PYG{n}{ptrn}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{\PYGZhy{}\PYGZgt{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{)}\PYG{p}{[}\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{1}\PYG{p}{]}
+        \PYG{n}{z\PYGZus{}ptrn} \PYG{o}{=} \PYG{n}{z\PYGZus{}ptrn} \PYG{k}{if} \PYG{n}{z\PYGZus{}ptrn} \PYG{k}{else} \PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{zy}\PYG{l+s+s1}{\PYGZsq{}}
+
+        \PYG{n}{w\PYGZus{}grad\PYGZus{}ptrn} \PYG{o}{=} \PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{p}{[}\PYG{n}{c} \PYG{k}{for} \PYG{n}{c} \PYG{o+ow}{in} \PYG{n}{w\PYGZus{}ptrn} \PYG{k}{if} \PYG{n}{c} \PYG{o+ow}{in} \PYG{n+nb}{set}\PYG{p}{(}\PYG{n}{x\PYGZus{}ptrn} \PYG{o}{+} \PYG{n}{z\PYGZus{}ptrn}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}
+        \PYG{n}{x\PYGZus{}grad\PYGZus{}ptrn} \PYG{o}{=} \PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{p}{[}\PYG{n}{c} \PYG{k}{for} \PYG{n}{c} \PYG{o+ow}{in} \PYG{n}{x\PYGZus{}ptrn} \PYG{k}{if} \PYG{n}{c} \PYG{o+ow}{in} \PYG{n+nb}{set}\PYG{p}{(}\PYG{n}{w\PYGZus{}ptrn} \PYG{o}{+} \PYG{n}{z\PYGZus{}ptrn}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}
+
+        \PYG{n}{x\PYGZus{}grad} \PYG{o}{=} \PYG{n}{np}\PYG{o}{.}\PYG{n}{einsum}\PYG{p}{(}\PYG{l+s+sa}{f}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{z\PYGZus{}ptrn}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s1}{,}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{w\PYGZus{}ptrn}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s1}{\PYGZhy{}\PYGZgt{}}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{x\PYGZus{}grad\PYGZus{}ptrn}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{,} \PYG{n}{out}\PYG{o}{.}\PYG{n}{grad}\PYG{p}{,} \PYG{n}{w}\PYG{o}{.}\PYG{n}{data}\PYG{p}{)}
+        \PYG{n}{w\PYGZus{}grad} \PYG{o}{=} \PYG{n}{np}\PYG{o}{.}\PYG{n}{einsum}\PYG{p}{(}\PYG{l+s+sa}{f}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{z\PYGZus{}ptrn}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s1}{,}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{x\PYGZus{}ptrn}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s1}{\PYGZhy{}\PYGZgt{}}\PYG{l+s+si}{\PYGZob{}}\PYG{n}{w\PYGZus{}grad\PYGZus{}ptrn}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{,} \PYG{n}{out}\PYG{o}{.}\PYG{n}{grad}\PYG{p}{,} \PYG{n}{x}\PYG{o}{.}\PYG{n}{data}\PYG{p}{)}
+
+        \PYG{n}{w\PYGZus{}shape} \PYG{o}{=} \PYG{n+nb}{dict}\PYG{p}{(}\PYG{n+nb}{zip}\PYG{p}{(}\PYG{n}{w\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{w}\PYG{o}{.}\PYG{n}{data}\PYG{o}{.}\PYG{n}{shape}\PYG{p}{)}\PYG{p}{)}
+        \PYG{n}{x\PYGZus{}shape} \PYG{o}{=} \PYG{n+nb}{dict}\PYG{p}{(}\PYG{n+nb}{zip}\PYG{p}{(}\PYG{n}{x\PYGZus{}ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{o}{.}\PYG{n}{data}\PYG{o}{.}\PYG{n}{shape}\PYG{p}{)}\PYG{p}{)}
+
+        \PYG{n}{w\PYGZus{}broadcast\PYGZus{}string} \PYG{o}{=} \PYG{l+s+sa}{f}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+si}{\PYGZob{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ }\PYG{l+s+s1}{\PYGZsq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{w\PYGZus{}grad\PYGZus{}ptrn}\PYG{p}{)}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s2}{ \PYGZhy{}\PYGZgt{} }\PYG{l+s+si}{\PYGZob{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ }\PYG{l+s+s1}{\PYGZsq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{w\PYGZus{}shape}\PYG{o}{.}\PYG{n}{keys}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s2}{\PYGZdq{}}
+        \PYG{n}{w\PYGZus{}grad} \PYG{o}{=} \PYG{n}{repeat}\PYG{p}{(}\PYG{n}{w\PYGZus{}grad}\PYG{p}{,} \PYG{n}{w\PYGZus{}broadcast\PYGZus{}string}\PYG{p}{,} \PYG{o}{*}\PYG{o}{*}\PYG{n}{w\PYGZus{}shape}\PYG{p}{)}
+
+        \PYG{n}{x\PYGZus{}broadcast\PYGZus{}string} \PYG{o}{=} \PYG{l+s+sa}{f}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+si}{\PYGZob{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ }\PYG{l+s+s1}{\PYGZsq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{x\PYGZus{}grad\PYGZus{}ptrn}\PYG{p}{)}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s2}{ \PYGZhy{}\PYGZgt{} }\PYG{l+s+si}{\PYGZob{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ }\PYG{l+s+s1}{\PYGZsq{}}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{x\PYGZus{}shape}\PYG{o}{.}\PYG{n}{keys}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{l+s+si}{\PYGZcb{}}\PYG{l+s+s2}{\PYGZdq{}}
+        \PYG{n}{x\PYGZus{}grad} \PYG{o}{=} \PYG{n}{repeat}\PYG{p}{(}\PYG{n}{x\PYGZus{}grad}\PYG{p}{,} \PYG{n}{x\PYGZus{}broadcast\PYGZus{}string}\PYG{p}{,} \PYG{o}{*}\PYG{o}{*}\PYG{n}{x\PYGZus{}shape}\PYG{p}{)}
+
+        \PYG{n}{x}\PYG{o}{.}\PYG{n}{grad} \PYG{o}{+}\PYG{o}{=} \PYG{n}{x\PYGZus{}grad}
+        \PYG{n}{w}\PYG{o}{.}\PYG{n}{grad} \PYG{o}{+}\PYG{o}{=} \PYG{n}{w\PYGZus{}grad}
+
+    \PYG{n}{out}\PYG{o}{.}\PYG{n}{\PYGZus{}backward} \PYG{o}{=} \PYG{n}{\PYGZus{}backward}
+    \PYG{k}{return} \PYG{n}{out}
+\end{MintedVerbatim}

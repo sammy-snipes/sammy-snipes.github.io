@@ -1,0 +1,27 @@
+\begin{MintedVerbatim}[commandchars=\\\{\}]
+\PYG{k+kn}{import}\PYG{+w}{ }\PYG{n+nn}{torch}
+\PYG{k+kn}{from}\PYG{+w}{ }\PYG{n+nn}{torch}\PYG{+w}{ }\PYG{k+kn}{import} \PYG{n}{einsum}
+\PYG{n}{torch}\PYG{o}{.}\PYG{n}{manual\PYGZus{}seed}\PYG{p}{(}\PYG{l+m+mi}{10}\PYG{p}{)}
+\PYG{n}{np}\PYG{o}{.}\PYG{n}{random}\PYG{o}{.}\PYG{n}{seed}\PYG{p}{(}\PYG{l+m+mi}{10}\PYG{p}{)}
+
+
+\PYG{n}{x} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{,} \PYG{l+m+mi}{3}\PYG{p}{,} \PYG{n}{requires\PYGZus{}grad} \PYG{o}{=} \PYG{k+kc}{True}\PYG{p}{)}
+\PYG{n}{thing} \PYG{o}{=} \PYG{n}{Thing}\PYG{p}{(}\PYG{n}{x}\PYG{o}{.}\PYG{n}{detach}\PYG{p}{(}\PYG{p}{)}\PYG{o}{.}\PYG{n}{numpy}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+
+\PYG{n}{shapes} \PYG{o}{=} \PYG{p}{[}\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{,} \PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{,} \PYG{p}{(}\PYG{l+m+mi}{4}\PYG{p}{,} \PYG{l+m+mi}{5}\PYG{p}{)}\PYG{p}{,} \PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,} \PYG{l+m+mi}{2}\PYG{p}{,} \PYG{l+m+mi}{5}\PYG{p}{)}\PYG{p}{,} \PYG{p}{(}\PYG{l+m+mi}{5}\PYG{p}{,} \PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{]}
+\PYG{n}{ptrns} \PYG{o}{=} \PYG{p}{[}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ij,jk\PYGZhy{}\PYGZgt{}ik}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{,} \PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ij,jk\PYGZhy{}\PYGZgt{}ik}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{,} \PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ij,cij\PYGZhy{}\PYGZgt{}ij}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{,} \PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+s1}{ab,bd\PYGZhy{}\PYGZgt{}}\PYG{l+s+s1}{\PYGZsq{}}\PYG{p}{]}
+
+\PYG{n}{torch\PYGZus{}weights} \PYG{o}{=} \PYG{p}{[}\PYG{n}{torch}\PYG{o}{.}\PYG{n}{randn}\PYG{p}{(}\PYG{n}{s}\PYG{p}{,} \PYG{n}{requires\PYGZus{}grad} \PYG{o}{=} \PYG{k+kc}{True}\PYG{p}{)} \PYG{k}{for} \PYG{n}{s} \PYG{o+ow}{in} \PYG{n}{shapes}\PYG{p}{]}
+\PYG{n}{thing\PYGZus{}weights} \PYG{o}{=} \PYG{p}{[}\PYG{n}{Thing}\PYG{p}{(}\PYG{n}{w}\PYG{o}{.}\PYG{n}{detach}\PYG{p}{(}\PYG{p}{)}\PYG{o}{.}\PYG{n}{numpy}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)} \PYG{k}{for} \PYG{n}{w} \PYG{o+ow}{in} \PYG{n}{torch\PYGZus{}weights}\PYG{p}{]}
+
+\PYG{k}{for} \PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{w}\PYG{p}{,} \PYG{n}{thing\PYGZus{}w}\PYG{p}{)} \PYG{o+ow}{in} \PYG{n+nb}{zip}\PYG{p}{(}\PYG{n}{ptrns}\PYG{p}{,} \PYG{n}{torch\PYGZus{}weights}\PYG{p}{,} \PYG{n}{thing\PYGZus{}weights}\PYG{p}{)}\PYG{p}{:}
+    \PYG{n}{x} \PYG{o}{=} \PYG{n}{torch}\PYG{o}{.}\PYG{n}{sigmoid}\PYG{p}{(}\PYG{n}{einsum}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{x}\PYG{p}{,} \PYG{n}{w}\PYG{p}{)}\PYG{p}{)}
+    \PYG{n}{thing} \PYG{o}{=} \PYG{n}{\PYGZus{}sigmoid}\PYG{p}{(}\PYG{n}{\PYGZus{}einsum}\PYG{p}{(}\PYG{n}{ptrn}\PYG{p}{,} \PYG{n}{thing}\PYG{p}{,} \PYG{n}{thing\PYGZus{}w}\PYG{p}{)}\PYG{p}{)}
+
+\PYG{n}{x}\PYG{o}{.}\PYG{n}{backward}\PYG{p}{(}\PYG{p}{)}
+\PYG{n}{thing}\PYG{o}{.}\PYG{n}{backward}\PYG{p}{(}\PYG{p}{)}
+
+\PYG{k}{for} \PYG{n}{w}\PYG{p}{,} \PYG{n}{thing\PYGZus{}w} \PYG{o+ow}{in} \PYG{n+nb}{zip}\PYG{p}{(}\PYG{n}{torch\PYGZus{}weights}\PYG{p}{,} \PYG{n}{thing\PYGZus{}weights}\PYG{p}{)}\PYG{p}{:}
+    \PYG{n+nb}{print}\PYG{p}{(}\PYG{n}{np}\PYG{o}{.}\PYG{n}{allclose}\PYG{p}{(}\PYG{n}{w}\PYG{o}{.}\PYG{n}{grad}\PYG{o}{.}\PYG{n}{detach}\PYG{p}{(}\PYG{p}{)}\PYG{o}{.}\PYG{n}{numpy}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,} \PYG{n}{thing\PYGZus{}w}\PYG{o}{.}\PYG{n}{grad}\PYG{p}{)}\PYG{p}{)}
+\PYG{c+c1}{\PYGZsh{} prints all true}
+\end{MintedVerbatim}

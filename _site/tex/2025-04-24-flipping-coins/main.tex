@@ -1,0 +1,47 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{dirtytalk}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{minted}
+\usepackage{parskip}
+\usepackage{pythonhighlight}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Overleaf Example},
+    pdfpagemode=FullScreen,
+    }
+\graphicspath{
+  {../../}
+}
+\usepackage[margin=72pt]{geometry}
+\setlength{\parindent}{0pt}
+\definecolor{puccin}{HTML}{24273a}
+\definecolor{bgrd}{HTML}{212228}
+\pagecolor{bgrd}
+\color{white}
+
+\title{How good does your coin need to be to beat the market?}
+\begin{document}
+\maketitle
+
+The other day I was making a really simple classifier that would predict if the S\&P would close higher than it opened.
+It was getting about 58\% correct in live testing which seemed pretty good but I dont have any benchmark for whats \emph{good} or \emph{bad}. This lead to the following question: If every mornign we flipped a coin where heads means we buy and sell at close, and tails means we do nothing, how accurate does that coin need to be to beat the market?
+
+More formally lets say $X$ is our coin with probability $q$ and skill $\alpha$, and the underlying stock is $S_t$. The returns from the coin strategy $C_t$ and the returns from simply buying and holding $R_t$ would be
+\begin{equation*}
+    C_t = \sum_{i=t_0}^{t} q\alpha (S_{t+1} - S_{t})
+\end{equation*}
+\begin{equation*}
+    R_t = S_{t} - S_{t_0}
+\end{equation*}
+What I want to know is under what conditions is $\mathbb{E}[C_t] > \mathbb{E}[R_t]$
+\end{document}
